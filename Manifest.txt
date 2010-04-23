@@ -1,0 +1,9 @@
+History.txt
+LICENSE.txt
+Manifest.txt
+README.txt
+Rakefile
+lib/rinruby.rb
+spec/rinruby_spec.rb
+spec/spec.opts
+spec/spec_helper.rb

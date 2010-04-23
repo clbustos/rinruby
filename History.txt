@@ -1,0 +1,11 @@
+=== 1.2.0 / 2010-05-23
+
+* Fixed to works on Ruby 1.9
+* Pull and push of Matrixes
+* Faster implementation using functions on R sended at beginning of session
+* Regression tests and specifications via RSpec
+
+=== 1.1.1 / 2008
+
+* Last official version on RubyForge
+
