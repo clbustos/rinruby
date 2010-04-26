@@ -1,5 +1,20 @@
 require File.expand_path(File.dirname(__FILE__) + '/spec_helper')
 describe RinRuby do
+  describe "on init" do
+    it "should accept :port_number" do
+      port=38442+rand(3)
+      r=RinRuby.new(:port_number=>port,:port_width=>1)
+      r.port_number.should==port
+      r.quit
+    end
+    it "should accept :port_width" do
+      port=38442
+      port_width=rand(10)
+      r=RinRuby.new(:port=>port, :port_width=>port_width)
+      r.port_width.should==port_width
+      r.port_number.should satisfy {|v| v>=port and v < port+port_width}
+    end
+  end
   before do
     R.echo(false)
   end
@@ -89,7 +104,7 @@ describe RinRuby do
 
   context "on quit" do
     before(:each) do
-      @r=RinRuby.new(false)
+      @r=RinRuby.new(:echo=>false)
     end
     it "return true" do
       @r.quit.should be_true
