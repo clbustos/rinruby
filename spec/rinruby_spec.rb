@@ -1,7 +1,7 @@
 require File.expand_path(File.dirname(__FILE__) + '/spec_helper')
 puts "RinRuby #{RinRuby::VERSION} specification"
 
-describe RinRuby
+describe RinRuby do
   before do
     R.echo(false)
   end
