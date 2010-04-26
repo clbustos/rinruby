@@ -34,14 +34,14 @@
 #
 #Coded by:: David B. Dahl
 #Documented by:: David B. Dahl & Scott Crawford
-#Copyright:: 2005-2008
+#Copyright:: 2005-2009
 #Web page:: http://rinruby.ddahl.org
 #E-mail::   mailto:rinruby@ddahl.org
-#License::  GNU General Public License (GPL), version 3 or later
+#License::  GNU Lesser General Public License (LGPL), version 3 or later
 #
 #--
 # This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Lesser General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
@@ -50,7 +50,7 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Lesser General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>
 #++
 #
@@ -62,7 +62,7 @@ class RinRuby
   require 'socket'
 
   
-  VERSION = '1.2.0'
+  VERSION = '2.0.0'
 
 
   attr_reader :interactive
@@ -85,33 +85,43 @@ class RinRuby
 #
 #Any number of independent instances of R can be created in this way.
 #
-#<b>Parameters that can be passed to the new method:</b>
+#<b>Parameters that can be passed to the new method using a Hash:</b>
 #
-#* echo: By setting the echo to false, output from R is suppressed, although warnings are still printed. This option can be changed later by using the echo method. The default is true.
-#* interactive: When interactive is false, R is run in non-interactive mode, resulting in plots without an explicit device being written to Rplots.pdf. Otherwise (i.e., interactive is true), plots are shown on the screen. The default is true.
-#* executable: The path of the R executable (which is "R" in Linux and Mac OS X, or "Rterm.exe" in Windows) can be set with the executable argument. The default is nil which makes RinRuby use the registry keys to find the path (on Windows) or use the path defined by $PATH (on Linux and Mac OS X).
-#* port_number: This is the smallest port number on the local host that could be used to pass data between Ruby and R. The actual port number used depends on port_width.
-#* port_width: RinRuby will randomly select a uniform number between port_number and port_number + port_width - 1 (inclusive) to pass data between Ruby and R. If the randomly selected port is not available, RinRuby will continue selecting random ports until it finds one that is available. By setting port_width to 1, RinRuby will wait until port_number is available. The default port_width is 1000.
+#* :echo: By setting the echo to false, output from R is suppressed, although warnings are still printed. This option can be changed later by using the echo method. The default is true.
+#* :interactive: When interactive is false, R is run in non-interactive mode, resulting in plots without an explicit device being written to Rplots.pdf. Otherwise (i.e., interactive is true), plots are shown on the screen. The default is true.
+#* :executable: The path of the R executable (which is "R" in Linux and Mac OS X, or "Rterm.exe" in Windows) can be set with the executable argument. The default is nil which makes RinRuby use the registry keys to find the path (on Windows) or use the path defined by $PATH (on Linux and Mac OS X).
+#* :port_number: This is the smallest port number on the local host that could be used to pass data between Ruby and R. The actual port number used depends on port_width.
+#* :port_width: RinRuby will randomly select a uniform number between port_number and port_number + port_width - 1 (inclusive) to pass data between Ruby and R. If the randomly selected port is not available, RinRuby will continue selecting random ports until it finds one that is available. By setting port_width to 1, RinRuby will wait until port_number is available. The default port_width is 1000.
 #
 #It may be desirable to change the parameters to the instance of R, but still call it by the name of R. In that case the old instance of R which was created with the 'require "rinruby"' statement should be closed first using the quit method which is explained below. Unless the previous instance is killed, it will continue to use system resources until exiting Ruby. The following shows an example by changing the parameter echo:
 #
 #      >> require "rinruby"
 #      >> R.quit
 #      >> R = RinRuby.new(false)
-
-  def initialize(echo=true, interactive=true, executable=nil, port_number=38442, port_width=1000)
+attr_reader :echo_enabled
+attr_reader :executable
+attr_reader :port_number
+attr_reader :port_width
+attr_reader :hostname
+def initialize(opts=Hash.new())
+  default_opts= {:echo=>true, :interactive=>true, :executable=>nil, :port_number=>38442, :port_width=>1000, :hostname=>'127.0.0.1'}
+  
+    @opts=default_opts.merge(opts)
+    @port_width=@opts[:port_width]
+    @executable=@opts[:executable]
+    @hostname=@opts[:hostname]
     while true
       begin
-        @port_number = port_number + rand(port_width)
-        @server_socket = TCPServer::new("127.0.0.1", @port_number)
+        @port_number = @opts[:port_number] + rand(port_width)
+        @server_socket = TCPServer::new(@hostname, @port_number)
         break
       rescue Errno::EADDRINUSE
         sleep 0.5 if port_width == 1
       end
     end
-    @echo_enabled = echo
+    @echo_enabled = @opts[:echo]
     @echo_stderr = false
-    @interactive = interactive
+    @interactive = @opts[:interactive]
     @platform = case RUBY_PLATFORM
       when /mswin/ then 'windows'
       when /mingw/ then 'windows'
@@ -126,8 +136,8 @@ class RinRuby
         end
       else 'default'
     end
-    if executable == nil
-      executable = ( @platform =~ /windows/ ) ? find_R_on_windows(@platform =~ /cygwin/) : 'R'
+    if @executable == nil
+      @executable = ( @platform =~ /windows/ ) ? find_R_on_windows(@platform =~ /cygwin/) : 'R'
     end
     platform_options = []
     if ( @interactive )
@@ -148,7 +158,7 @@ class RinRuby
     @writer.puts <<-EOF
       #{RinRuby_KeepTrying_Variable} <- TRUE
       while ( #{RinRuby_KeepTrying_Variable} ) {
-        #{RinRuby_Socket} <- try(suppressWarnings(socketConnection("127.0.0.1", #{@port_number}, blocking=TRUE, open="rb")),TRUE)
+        #{RinRuby_Socket} <- try(suppressWarnings(socketConnection("#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")),TRUE)
         if ( inherits(#{RinRuby_Socket},"try-error") ) {
           Sys.sleep(0.1)
         } else {
@@ -224,7 +234,7 @@ class RinRuby
       @writer.puts "warning('#{RinRuby_Stderr_Flag}',immediate.=TRUE)" if @echo_stderr
       @writer.puts "print('#{RinRuby_Eval_Flag}')"
     else
-      raise ParseError, "Parse error on eval"
+      raise ParseError, "Parse error on eval:#{string}"
     end
     Signal.trap('INT') do
       @writer.print ''
@@ -260,7 +270,7 @@ class RinRuby
       return false if line == RinRuby_Exit_Flag
       if echo_enabled && echo_eligible
         puts line
-        $stdout.flush
+        $stdout.flush if @platform !~ /windows/
       end
     end
     Signal.trap('INT') do
