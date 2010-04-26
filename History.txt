@@ -1,3 +1,6 @@
+=== 2.0.0 / 2010-05-26
+* Changed RinRuby initialize, with option Hash instead of ordered parameters.
+
 === 1.2.0 / 2010-05-23
 
 * Fixed to works on Ruby 1.9
