@@ -3,6 +3,22 @@ puts "RinRuby #{RinRuby::VERSION} specification"
 
 describe RinRuby do
   describe "on init" do
+    it "should accept parameters as specified on Dahl & Crawford(2009)" do
+      r=RinRuby.new(false, false, "R", 38500, 1)
+      r.echo_enabled.should_not be_true
+      r.interactive.should_not be_true
+      r.executable.should=='R'
+      r.port_number.should==38500
+      r.port_width.should==1
+      
+      
+    end
+    it "should accept :echo and :interactive parameters" do
+      r=RinRuby.new(:echo=>false, :interactive=>false)
+      r.echo_enabled.should_not be_true
+      r.interactive.should_not be_true
+      
+    end
     it "should accept :port_number" do
       port=38442+rand(3)
       r=RinRuby.new(:port_number=>port,:port_width=>1)

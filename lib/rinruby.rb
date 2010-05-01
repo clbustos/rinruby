@@ -62,7 +62,7 @@ class RinRuby
   require 'socket'
 
   
-  VERSION = '2.0.0'
+  VERSION = '2.0.1'
 
 
   attr_reader :interactive
@@ -103,7 +103,17 @@ attr_reader :executable
 attr_reader :port_number
 attr_reader :port_width
 attr_reader :hostname
-def initialize(opts=Hash.new())
+def initialize(*args)
+  opts=Hash.new
+  if args.size==1 and args[0].is_a? Hash
+    opts=args[0]
+  else
+    opts[:echo]=args.shift unless args.size==0
+    opts[:interactive]=args.shift unless args.size==0
+    opts[:executable]=args.shift unless args.size==0
+    opts[:port_number]=args.shift unless args.size==0
+    opts[:port_width]=args.shift unless args.size==0
+  end
   default_opts= {:echo=>true, :interactive=>true, :executable=>nil, :port_number=>38442, :port_width=>1000, :hostname=>'127.0.0.1'}
   
     @opts=default_opts.merge(opts)

@@ -1,7 +1,10 @@
-=== 2.0.0 / 2010-05-26
+=== 2.0.1 / 2010-05-01
+* Reimplemented Rinruby.new with ordered parameters, for complete backwards compatibility
+
+=== 2.0.0 / 2010-04-26
 * Changed RinRuby initialize, with option Hash instead of ordered parameters.
 
-=== 1.2.0 / 2010-05-23
+=== 1.2.0 / 2010-04-23
 
 * Fixed to works on Ruby 1.9
 * Pull and push of Matrixes
