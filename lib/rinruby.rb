@@ -771,7 +771,13 @@ def initialize(*args)
     else
       path.gsub!('\\','/')
     end
-    %Q<"#{path}/bin/Rterm.exe">
+    for hierarchy in [ 'bin', 'bin/i386', 'bin/x86' ]
+      target = "#{path}/#{hierarchy}/Rterm.exe"
+      if File.exists? target
+        return %Q<"#{target}">
+      end
+    end
+    raise "Cannot locate R executable"
   end
 
 end
