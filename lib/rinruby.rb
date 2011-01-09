@@ -771,7 +771,7 @@ def initialize(*args)
     else
       path.gsub!('\\','/')
     end
-    for hierarchy in [ 'bin', 'bin/i386', 'bin/x86' ]
+    for hierarchy in [ 'bin', 'bin/i386', 'bin/x64' ]
       target = "#{path}/#{hierarchy}/Rterm.exe"
       if File.exists? target
         return %Q<"#{target}">
