@@ -189,7 +189,8 @@ def initialize(*args)
   def quit
     begin 
       @writer.puts "q(save='no')"
-      @socket.read
+      # TODO: Verify if read is needed
+      @socket.read()
       #@socket.close 
       @engine.close 
   
@@ -771,7 +772,13 @@ def initialize(*args)
     else
       path.gsub!('\\','/')
     end
-    %Q<"#{path}/bin/Rterm.exe">
+    for hierarchy in [ 'bin', 'bin/i386', 'bin/x64' ]
+      target = "#{path}/#{hierarchy}/Rterm.exe"
+      if File.exists? target
+        return %Q<"#{target}">
+      end
+    end
+    raise "Cannot locate R executable"
   end
 
 end
