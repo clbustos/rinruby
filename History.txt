@@ -1,3 +1,9 @@
+=== 2.0.2 / 2011-02-03
+
+* Updated RSpec to 2.0. Should work on Windows [clbustos]
+* 64-bit version is in x64 [Rob Heittman]
+* Adapt to different Rterm.exe locations [Rob Heittman]
+
 === 2.0.1 / 2010-05-01
 * Reimplemented Rinruby.new with ordered parameters, for complete backwards compatibility
 
