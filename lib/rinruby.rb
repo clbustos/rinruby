@@ -189,6 +189,7 @@ def initialize(*args)
   def quit
     begin 
       @writer.puts "q(save='no')"
+      # TODO: Verify if read is needed
       @socket.read()
       #@socket.close 
       @engine.close 

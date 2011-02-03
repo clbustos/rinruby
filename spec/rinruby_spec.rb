@@ -4,14 +4,25 @@ puts "RinRuby #{RinRuby::VERSION} specification"
 describe RinRuby do
   describe "on init" do
     it "should accept parameters as specified on Dahl & Crawford(2009)" do
+      
+      platform = case RUBY_PLATFORM
+      when /mswin/ then 'windows'
+      when /mingw/ then 'windows'
+      when /bccwin/ then 'windows'
+      else 
+        "other"
+      end
+      if platform=='windows'
+        pending("Difficult to test without specific location of R executable on Windows")
+      else      
+      
       r=RinRuby.new(false, false, "R", 38500, 1)
       r.echo_enabled.should_not be_true
       r.interactive.should_not be_true
-      r.executable.should=='R'
+      r.executable.should=="R"
       r.port_number.should==38500
-      r.port_width.should==1
-      
-      
+      r.port_width.should==1      
+      end
     end
     it "should accept :echo and :interactive parameters" do
       r=RinRuby.new(:echo=>false, :interactive=>false)
@@ -113,7 +124,7 @@ describe RinRuby do
       rx=R.x
       matrix.row_size.times {|i|
         matrix.column_size.times {|j|
-          matrix[i,j].should be_close(rx[i,j],1e-10)
+          matrix[i,j].should be_within(1e-10).of(rx[i,j])
         }
       }
     end
