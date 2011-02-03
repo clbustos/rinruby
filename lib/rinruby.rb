@@ -93,7 +93,7 @@ class RinRuby
 #* :port_number: This is the smallest port number on the local host that could be used to pass data between Ruby and R. The actual port number used depends on port_width.
 #* :port_width: RinRuby will randomly select a uniform number between port_number and port_number + port_width - 1 (inclusive) to pass data between Ruby and R. If the randomly selected port is not available, RinRuby will continue selecting random ports until it finds one that is available. By setting port_width to 1, RinRuby will wait until port_number is available. The default port_width is 1000.
 #
-#It may be desirable to change the parameters to the instance of R, but still call it by the name of R. In that case the old instance of R which was created with the 'require "rinruby"' statement should be closed first using the quit method which is explained below. Unless the previous instance is killed, it will continue to use system resources until exiting Ruby. The following shows an example by changing the parameter echo:
+# It may be desirable to change the parameters to the instance of R, but still call it by the name of R. In that case the old instance of R which was created with the 'require "rinruby"' statement should be closed first using the quit method which is explained below. Unless the previous instance is killed, it will continue to use system resources until exiting Ruby. The following shows an example by changing the parameter echo:
 #
 #      >> require "rinruby"
 #      >> R.quit
@@ -189,7 +189,7 @@ def initialize(*args)
   def quit
     begin 
       @writer.puts "q(save='no')"
-      @socket.read()
+      @socket.read
       #@socket.close 
       @engine.close 
   
