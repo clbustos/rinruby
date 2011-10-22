@@ -18,7 +18,7 @@ Contributors: Claudio Bustos
 == FEATURES/PROBLEMS:
 
 * Pure Ruby. Works on Ruby 1.8.7, 1.9 and JRuby 1.4
-* Slower than RSRuby, but more robuts
+* Slower than RSRuby, but more robust
 
 == SYNOPSIS:
 Below is a simple example of RinRuby usage for simple linear regression. The simulation parameters are defined in Ruby, computations are performed in R, and Ruby reports the results. In a more elaborate application, the simulation parameter might come from input from a graphical user interface, the statistical analysis might be more involved, and the results might be an HTML page or PDF report. 
