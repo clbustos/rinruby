@@ -1,3 +1,9 @@
+=== 2.0.3 / 2012-07-31
+  * 64-bit version is in x64
+  * Adapt to different Rterm.exe locations. On Windows at least, Rterm.exe has moved under an i386/ folder
+  * Update README.txt
+  * Updated spec to rspec 2.0
+
 === 2.0.1 / 2010-05-01
 * Reimplemented Rinruby.new with ordered parameters, for complete backwards compatibility
 
