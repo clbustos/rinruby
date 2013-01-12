@@ -33,7 +33,7 @@ Below is a simple example of RinRuby usage for simple linear regression. The sim
       seed = 23423
       R.x = (1..n).entries
       R.eval <<EOF
-          set.seed({seed})
+          set.seed(#{seed})
           y <- {beta_0} + {beta_1}*x + rnorm({n})
           fit <- lm( y ~ x )
           est <- round(coef(fit),3)
