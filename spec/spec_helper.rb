@@ -5,10 +5,6 @@ require 'rspec'
 
 require 'matrix'
 
-Spec::Runner.configure do |config|
-  
-end
-
 class String
   def deindent
     gsub /^[ \t]*/, ''
