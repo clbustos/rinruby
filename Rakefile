@@ -14,8 +14,7 @@ Hoe.spec 'rinruby' do
   # self.rubyforge_name = 'rinruby' # if different than 'rinruby2'
   self.developer('David Dahl', 'rinruby_AT_ddahl.org')
   self.developer('Claudio Bustos', 'clbustos_AT_gmail.com')
-  self.url = "http://rinruby.ddahl.org/"
-
+  self.urls = ["http://rinruby.ddahl.org/"]
 end
 
 # vim: syntax=ruby
