@@ -39,7 +39,7 @@ Below is a simple example of RinRuby usage for simple linear regression. The sim
           est <- round(coef(fit),3)
           pvalue <- summary(fit)$coefficients[2,4]
       EOF
-      puts "E(y|x) ~= {R.est[0]} + {R.est[1]} * x"
+      puts "E(y|x) ~= #{R.est[0]} + #{R.est[1]} * x"
       if R.pvalue < alpha
         puts "Reject the null hypothesis and conclude that x and y are related."
       else
