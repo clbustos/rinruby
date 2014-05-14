@@ -2,7 +2,7 @@
 #
 #RinRuby is a Ruby library that integrates the R interpreter in Ruby, making R's statistical routines and graphics available within Ruby.  The library consists of a single Ruby script that is simple to install and does not require any special compilation or installation of R.  Since the library is 100% pure Ruby, it works on a variety of operating systems, Ruby implementations, and versions of R.  RinRuby's methods are simple, making for readable code.  The {website [rinruby.ddahl.org]}[http://rinruby.ddahl.org] describes RinRuby usage, provides comprehensive documentation, gives several examples, and discusses RinRuby's implementation.
 #
-#Below is a simple example of RinRuby usage for simple linear regression. The simulation parameters are defined in Ruby, computations are performed in R, and Ruby reports the results. In a more elaborate application, the simulation parameter might come from input from a graphical user interface, the statistical analysis might be more involved, and the results might be an HTML page or PDF report. 
+#Below is a simple example of RinRuby usage for simple linear regression. The simulation parameters are defined in Ruby, computations are performed in R, and Ruby reports the results. In a more elaborate application, the simulation parameter might come from input from a graphical user interface, the statistical analysis might be more involved, and the results might be an HTML page or PDF report.
 #
 #<b>Code</b>:
 #
@@ -58,10 +58,10 @@
 #The files "java" and "readline" are used when available to add functionality.
 require 'matrix'
 class RinRuby
-  
+
   require 'socket'
 
-  
+
   VERSION = '2.0.1'
 
 
@@ -71,8 +71,8 @@ class RinRuby
   EngineClosed=Class.new(Exception)
   # Parse error
   ParseError=Class.new(Exception)
-  
-  
+
+
 #RinRuby is invoked within a Ruby script (or the interactive "irb" prompt denoted >>) using:
 #
 #      >> require "rinruby"
@@ -98,7 +98,7 @@ class RinRuby
 #      >> require "rinruby"
 #      >> R.quit
 #      >> R = RinRuby.new(false)
-attr_reader :echo_enabled
+attr_accessor :echo_enabled
 attr_reader :executable
 attr_reader :port_number
 attr_reader :port_width
@@ -115,7 +115,7 @@ def initialize(*args)
     opts[:port_width]=args.shift unless args.size==0
   end
   default_opts= {:echo=>true, :interactive=>true, :executable=>nil, :port_number=>38442, :port_width=>1000, :hostname=>'127.0.0.1'}
-  
+
     @opts=default_opts.merge(opts)
     @port_width=@opts[:port_width]
     @executable=@opts[:executable]
@@ -187,16 +187,16 @@ def initialize(*args)
 #The quit method will properly close the bridge between Ruby and R, freeing up system resources. This method does not need to be run when a Ruby script ends.
 
   def quit
-    begin 
+    begin
       @writer.puts "q(save='no')"
       # TODO: Verify if read is needed
       @socket.read()
-      #@socket.close 
-      @engine.close 
-  
-      
-      @server_socket.close 
-      #@reader.close 
+      #@socket.close
+      @engine.close
+
+
+      @server_socket.close
+      #@reader.close
       #@writer.close
       true
     ensure
@@ -527,8 +527,8 @@ def initialize(*args)
   RinRuby_Max_R_Integer = 2**31-1
   RinRuby_Min_R_Integer = -2**31+1
   #:startdoc:
-  
-  
+
+
   def r_rinruby_parseable
     @writer.puts <<-EOF
     rinruby_parseable<-function(var) {
@@ -561,7 +561,7 @@ def initialize(*args)
       }
     EOF
   end
-  
+
   def r_rinruby_pull
  @writer.puts <<-EOF
  rinruby_pull <-function(var)
@@ -573,7 +573,7 @@ def initialize(*args)
       writeBin(as.integer(#{RinRuby_Type_Matrix}),#{RinRuby_Socket},endian="big")
       writeBin(as.integer(dim(var)[1]),#{RinRuby_Socket},endian="big")
       writeBin(as.integer(dim(var)[2]),#{RinRuby_Socket},endian="big")
-      
+
     }  else if ( is.double(var) ) {
       writeBin(as.integer(#{RinRuby_Type_Double}),#{RinRuby_Socket},endian="big")
       writeBin(as.integer(length(var)),#{RinRuby_Socket},endian="big")
@@ -595,8 +595,8 @@ def initialize(*args)
   }
 }
     EOF
-    
-    
+
+
   end
   def to_signed_int(y)
     if y.kind_of?(Integer)
@@ -614,7 +614,7 @@ def initialize(*args)
       eval "#{name}=matrix(c(#{values.join(',')}), #{value.row_size}, #{value.column_size}, TRUE)"
       return original_value
     end
-    
+
     if value.kind_of?(String)
       type = RinRuby_Type_String
       length = 1
@@ -687,7 +687,7 @@ def initialize(*args)
     end
     @socket.read(4,buffer)
     length = to_signed_int(buffer.unpack('N')[0].to_i)
-    
+
     if ( type == RinRuby_Type_Double )
       @socket.read(8*length,buffer)
       result = buffer.unpack('G'*length)
@@ -730,12 +730,12 @@ def initialize(*args)
     @writer.puts "rm(#{RinRuby_Parse_String})"
     result = to_signed_int(buffer.unpack('N')[0].to_i)
     return result==-1 ? false : true
-    
-=begin    
-    
+
+=begin
+
     result = pull_engine("unlist(lapply(c('.*','^Error in parse.*','^Error in parse.*unexpected end of input.*'),
       grep,try({parse(text=#{RinRuby_Parse_String}); 1}, silent=TRUE)))")
-    
+
     return true if result.length == 1
     return false if result.length == 3
     raise ParseError, "Parse error"
