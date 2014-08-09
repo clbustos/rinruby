@@ -13,12 +13,13 @@ describe RinRuby do
         "other"
       end
       if platform=='windows'
-        pending("Difficult to test without specific location of R executable on Windows")
+        skip("Difficult to test without specific location of R executable on Windows")
       else      
       
       r=RinRuby.new(false, false, "R", 38500, 1)
-      r.echo_enabled.should_not be_true
-      r.interactive.should_not be_true
+      
+      expect(r.echo_enabled).to be false
+      r.interactive.should be false
       r.executable.should=="R"
       r.port_number.should==38500
       r.port_width.should==1      
@@ -26,8 +27,8 @@ describe RinRuby do
     end
     it "should accept :echo and :interactive parameters" do
       r=RinRuby.new(:echo=>false, :interactive=>false)
-      r.echo_enabled.should_not be_true
-      r.interactive.should_not be_true
+      r.echo_enabled.should be false
+      r.interactive.should be false
       
     end
     it "should accept :port_number" do
@@ -56,13 +57,13 @@ describe RinRuby do
     it {should respond_to :quit}
     it {should respond_to :echo}
     it "return correct values for complete?" do
-      R.eval("x<-1").should be_true
+      R.eval("x<-1").should be true
     end
     it "return false for complete? for incorrect expressions" do
-      R.complete?("x<-").should be_false
+      R.complete?("x<-").should be false
     end
     it "correct eval should return true" do 
-      R.complete?("x<-1").should be_true
+      R.complete?("x<-1").should be true
     end
     it "incorrect eval should raise an ParseError" do
       lambda {R.eval("x<-")}.should raise_error(RinRuby::ParseError)
@@ -136,7 +137,7 @@ describe RinRuby do
       @r=RinRuby.new(:echo=>false)
     end
     it "return true" do
-      @r.quit.should be_true
+      @r.quit.should be true
     end
     it "returns an error if used again" do
       @r.quit
