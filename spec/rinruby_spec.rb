@@ -39,9 +39,9 @@ describe RinRuby do
     end
     it "should accept :port_width" do
       port=38442
-      port_width=rand(10)
+      port_width=rand(10)+1
       r=RinRuby.new(:port=>port, :port_width=>port_width)
-      r.port_width.should==port_width
+      expect(r.port_width).to be == port_width
       r.port_number.should satisfy {|v| v>=port and v < port+port_width}
     end
   end
