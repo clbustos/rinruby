@@ -247,9 +247,11 @@ def initialize(*args)
       raise ParseError, "Parse error on eval:#{string}"
     end
     Signal.trap('INT') do
+      puts "#{__FILE__}:#{__LINE__} GOT INT"
       @writer.print ''
       @reader.gets if @platform !~ /java/
       Signal.trap('INT') do
+        puts "#{__FILE__}:#{__LINE__} GOT INT"
       end
       return true
     end
@@ -284,6 +286,7 @@ def initialize(*args)
       end
     end
     Signal.trap('INT') do
+      puts "#{__FILE__}:#{__LINE__} GOT INT"
     end
     true
   end
