@@ -246,7 +246,7 @@ def initialize(*args)
     else
       raise ParseError, "Parse error on eval:#{string}"
     end
-    Signal.trap('INT') do
+    old_handler = Signal.trap('INT') do
       puts "#{__FILE__}:#{__LINE__} GOT INT"
       @writer.print ''
       @reader.gets if @platform !~ /java/
@@ -285,9 +285,7 @@ def initialize(*args)
         $stdout.flush if @platform !~ /windows/
       end
     end
-    Signal.trap('INT') do
-      puts "#{__FILE__}:#{__LINE__} GOT INT"
-    end
+    Signal.trap('INT', old_handler)
     true
   end
 
