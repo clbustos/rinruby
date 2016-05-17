@@ -9,7 +9,17 @@ Gem::Specification.new do |spec|
   spec.authors       = ["David Dahl", "Scott Crawford", "Claudio Bustos"]
   spec.email         = ["rinruby@ddahl.org", "scott@ddahl.org", "clbustos@gmail.com"]
   spec.summary       = %q{RinRuby is a Ruby library that integrates the R interpreter in Ruby}
-  spec.description   = %q{RinRuby is a Ruby library that integrates the R interpreter in Ruby, making R's statistical routines and graphics available within Ruby. The library consists of a single Ruby script that is simple to install and does not require any special compilation or installation of R. Since the library is 100% pure Ruby, it works on a variety of operating systems, Ruby implementations, and versions of R.  RinRuby's methods are simple, making for readable code.  The {website [rinruby.ddahl.org]}[http://rinruby.ddahl.org] describes RinRuby usage, provides comprehensive documentation, gives several examples, and discusses RinRuby's implementation.}
+  spec.description   = <<-EOF
+  RinRuby is a Ruby library that integrates the R interpreter in Ruby, making
+  R's statistical routines and graphics available within Ruby. The library
+  consists of a single Ruby script that is simple to install and does not
+  require any special compilation or installation of R. Since the library is
+  100% pure Ruby, it works on a variety of operating systems, Ruby
+  implementations, and versions of R.  RinRuby's methods are simple, making for
+  readable code.  The {website [rinruby.ddahl.org]}[http://rinruby.ddahl.org]
+  describes RinRuby usage, provides comprehensive documentation, gives several
+  examples, and discusses RinRuby's implementation.
+  EOF
   spec.homepage      = "http://rinruby.ddahl.org"
   spec.license       = "Copyright 2005-2008 David B. Dahl"
 

@@ -3,8 +3,15 @@
 
 ### DESCRIPTION
 
-RinRuby is a Ruby library that integrates the R interpreter in Ruby, making R's statistical routines and graphics available within Ruby.  The library consists of a single Ruby script that is simple to install and does not require any special compilation or installation of R.  Since the library is 100% pure Ruby, it works on a variety of operating systems, Ruby implementations, and versions of R.  RinRuby's methods are simple, making for readable code.  The {website [rinruby.ddahl.org]}[http://rinruby.ddahl.org] describes RinRuby usage, provides comprehensive documentation, gives several examples, and discusses RinRuby's implementation.
-
+RinRuby is a Ruby library that integrates the R interpreter in Ruby, making R's
+statistical routines and graphics available within Ruby.  The library consists
+of a single Ruby script that is simple to install and does not require any
+special compilation or installation of R.  Since the library is 100% pure Ruby,
+it works on a variety of operating systems, Ruby implementations, and versions
+of R.  RinRuby's methods are simple, making for readable code.  The {website
+[rinruby.ddahl.org]}[http://rinruby.ddahl.org] describes RinRuby usage,
+provides comprehensive documentation, gives several examples, and discusses
+RinRuby's implementation.
 
 Copyright 2005-2008 David B. Dahl
 
@@ -21,7 +28,12 @@ Contributors: Claudio Bustos
 
 ### SYNOPSIS
 
-Below is a simple example of RinRuby usage for simple linear regression. The simulation parameters are defined in Ruby, computations are performed in R, and Ruby reports the results. In a more elaborate application, the simulation parameter might come from input from a graphical user interface, the statistical analysis might be more involved, and the results might be an HTML page or PDF report. 
+Below is a simple example of RinRuby usage for simple linear regression. The
+simulation parameters are defined in Ruby, computations are performed in R, and
+Ruby reports the results. In a more elaborate application, the simulation
+parameter might come from input from a graphical user interface, the
+statistical analysis might be more involved, and the results might be an HTML
+page or PDF report.
 
 #### Code
 
