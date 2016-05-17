@@ -17,20 +17,18 @@ describe RinRuby do
         skip("Difficult to test without specific location of R executable on Windows")
       else
 
-      r=RinRuby.new(false, false, "R", 38500, 1)
+      r=RinRuby.new(false, "R", 38500, 1)
 
       expect(r.echo_enabled).to be false
-      r.interactive.should be false
       r.executable.should=="R"
       r.port_number.should==38500
       r.port_width.should==1
       end
     end
 
-    it "should accept :echo and :interactive parameters" do
-      r=RinRuby.new(:echo=>false, :interactive=>false)
+    it "should accept :echo parameters" do
+      r = RinRuby.new(:echo => false)
       r.echo_enabled.should be false
-      r.interactive.should be false
     end
 
     it "should accept :port_number" do

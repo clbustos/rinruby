@@ -69,22 +69,32 @@
 #++
 #
 #
-# The files "java" and "readline" are used when available to add functionality.
-#
+# The library "java" is used when available to add functionality.
 require 'matrix'
 require 'socket'
 
 class RinRuby
   VERSION = '2.0.3'
 
-  attr_reader :interactive
-  attr_reader :readline
+  attr_accessor :echo_enabled
+  attr_reader :executable
+  attr_reader :port_number
+  attr_reader :port_width
+  attr_reader :hostname
 
   # Exception for closed engine
-  EngineClosed=Class.new(Exception)
+  EngineClosed = Class.new(Exception)
 
   # Parse error
-  ParseError=Class.new(Exception)
+  ParseError = Class.new(Exception)
+
+  DEFAULT_OPTIONS = {
+    :echo => true,
+   :executable => nil,
+   :port_number => 38442,
+   :port_width => 1000,
+   :hostname => '127.0.0.1'
+  }.freeze
 
   # RinRuby is invoked within a Ruby script (or the interactive "irb" prompt
   # denoted >>) using:
@@ -107,11 +117,6 @@ class RinRuby
   # * :echo: By setting the echo to false, output from R is suppressed,
   #   although warnings are still printed. This option can be changed later by
   #   using the echo method. The default is true.
-  #
-  # * :interactive: When interactive is false, R is run in non-interactive
-  #   mode, resulting in plots without an explicit device being written to
-  #   Rplots.pdf. Otherwise (i.e., interactive is true), plots are shown on the
-  #   screen. The default is true.
   #
   # * :executable: The path of the R executable (which is "R" in Linux and Mac
   #   OS X, or "Rterm.exe" in Windows) can be set with the executable argument.
@@ -139,29 +144,26 @@ class RinRuby
   #      >> require "rinruby"
   #      >> R.quit
   #      >> R = RinRuby.new(false)
-  attr_accessor :echo_enabled
-  attr_reader :executable
-  attr_reader :port_number
-  attr_reader :port_width
-  attr_reader :hostname
-
   def initialize(*args)
-    opts=Hash.new
-    if args.size==1 and args[0].is_a? Hash
-      opts=args[0]
-    else
-      opts[:echo]=args.shift unless args.size==0
-      opts[:interactive]=args.shift unless args.size==0
-      opts[:executable]=args.shift unless args.size==0
-      opts[:port_number]=args.shift unless args.size==0
-      opts[:port_width]=args.shift unless args.size==0
-    end
-    default_opts= {:echo=>true, :interactive=>true, :executable=>nil, :port_number=>38442, :port_width=>1000, :hostname=>'127.0.0.1'}
+    opts = Hash.new
 
-    @opts=default_opts.merge(opts)
-    @port_width=@opts[:port_width]
-    @executable=@opts[:executable]
-    @hostname=@opts[:hostname]
+    if args.size == 1 and args[0].is_a? Hash
+      opts = args[0]
+    else
+      opts[:echo] = args.shift unless args.size==0
+      opts[:executable] = args.shift unless args.size==0
+      opts[:port_number] = args.shift unless args.size==0
+      opts[:port_width] = args.shift unless args.size==0
+    end
+
+    @opts = DEFAULT_OPTIONS.merge(opts)
+    @port_width = @opts[:port_width]
+    @executable = @opts[:executable]
+    @hostname = @opts[:hostname]
+    @echo_enabled = @opts[:echo]
+    @echo_stderr = false
+
+    # find available port
     while true
       begin
         @port_number = @opts[:port_number] + rand(port_width)
@@ -171,9 +173,8 @@ class RinRuby
         sleep 0.5 if port_width == 1
       end
     end
-    @echo_enabled = @opts[:echo]
-    @echo_stderr = false
-    @interactive = @opts[:interactive]
+
+    # determine R platform
     @platform = case RUBY_PLATFORM
                 when /mswin/ then 'windows'
                 when /mingw/ then 'windows'
@@ -188,25 +189,22 @@ class RinRuby
                   end
                 else 'default'
                 end
+
     if @executable == nil
       @executable = ( @platform =~ /windows/ ) ? find_R_on_windows(@platform =~ /cygwin/) : 'R'
     end
+
     platform_options = []
-    if ( @interactive )
-      begin
-        require 'readline'
-      rescue LoadError
-      end
-      @readline = defined?(Readline)
-      platform_options << ( ( @platform =~ /windows/ ) ? '--ess' : '--interactive' )
-    else
-      @readline = false
-    end
+
     cmd = %Q<#{executable} #{platform_options.join(' ')} --slave>
+
+    # spawn R process
     @engine = IO.popen(cmd,"w+")
     @reader = @engine
     @writer = @engine
     raise "Engine closed" if @engine.closed?
+
+    # connect to the server
     @writer.puts <<-EOF
     #{RinRuby_KeepTrying_Variable} <- TRUE
       while ( #{RinRuby_KeepTrying_Variable} ) {
@@ -222,6 +220,7 @@ class RinRuby
     r_rinruby_get_value
     r_rinruby_pull
     r_rinruby_parseable
+
     @socket = @server_socket.accept
     echo(nil,true) if @platform =~ /.*-java/      # Redirect error messages on the Java platform
   end
@@ -333,58 +332,6 @@ class RinRuby
       end
     end
     Signal.trap('INT') do
-    end
-    true
-  end
-
-  # When sending code to Ruby using an interactive prompt, this method will
-  # change the prompt to an R prompt. From the R prompt commands can be sent to
-  # R exactly as if the R program was actually running. When the user is ready
-  # to return to Ruby, then the command exit() will return the prompt to Ruby.
-  # This is the ideal situation for the explorative programmer who needs to run
-  # several lines of code in R, and see the results after each command. This is
-  # also an easy way to execute loops without the use of a here document. It
-  # should be noted that the prompt command does not work in a script, just
-  # Ruby's interactive irb.
-  #
-  # <b>Parameters that can be passed to the prompt method:</b>
-  #
-  # * regular_prompt: This defines the string used to denote the R prompt.
-  #
-  # * continue_prompt: This is the string used to denote R's prompt for an
-  #   incomplete statement (such as a multiple for loop).
-  def prompt(regular_prompt="> ", continue_prompt="+ ")
-    raise "The 'prompt' method only available in 'interactive' mode" if ! @interactive
-    return false if ! eval("0",false)
-    prompt = regular_prompt
-    while true
-      cmds = []
-      while true
-        if @readline && @interactive
-          cmd = Readline.readline(prompt,true)
-        else
-          print prompt
-          $stdout.flush
-          cmd = gets.strip
-        end
-        cmds << cmd
-        begin
-          if complete?(cmds.join("\n"))
-            prompt = regular_prompt
-            break
-          else
-            prompt = continue_prompt
-          end
-        rescue
-          puts "Parse error"
-          prompt = regular_prompt
-          cmds = []
-          break
-        end
-      end
-      next if cmds.length == 0
-      break if cmds.length == 1 && cmds[0] == "exit()"
-      break if ! eval(cmds.join("\n"),true)
     end
     true
   end
