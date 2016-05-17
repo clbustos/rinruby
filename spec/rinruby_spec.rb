@@ -6,24 +6,12 @@ R = RinRuby.new
 describe RinRuby do
   describe "on init" do
     it "should accept parameters as specified on Dahl & Crawford(2009)" do
-      platform = case RUBY_PLATFORM
-      when /mswin/ then 'windows'
-      when /mingw/ then 'windows'
-      when /bccwin/ then 'windows'
-      else
-        "other"
-      end
-      if platform=='windows'
-        skip("Difficult to test without specific location of R executable on Windows")
-      else
+      r = RinRuby.new(false, "R", 38500, 1)
 
-      r=RinRuby.new(false, "R", 38500, 1)
-
-      expect(r.echo_enabled).to be false
-      r.executable.should=="R"
-      r.port_number.should==38500
-      r.port_width.should==1
-      end
+      expect(r.echo_enabled).to be(false)
+      r.executable.should == "R"
+      r.port_number.should == 38500
+      r.port_width.should == 1
     end
 
     it "should accept :echo parameters" do

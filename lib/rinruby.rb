@@ -67,9 +67,6 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>
 #++
-#
-#
-# The library "java" is used when available to add functionality.
 require 'matrix'
 require 'socket'
 
@@ -89,7 +86,7 @@ class RinRuby
   ParseError = Class.new(Exception)
 
   DEFAULT_OPTIONS = {
-    :echo => true,
+   :echo => true,
    :executable => nil,
    :port_number => 38442,
    :port_width => 1000,
@@ -174,23 +171,8 @@ class RinRuby
       end
     end
 
-    # determine R platform
-    @platform = case RUBY_PLATFORM
-                when /java/
-                  require 'java' #:nodoc:
-                  if java.lang.System.getProperty("os.name") =~ /[Ww]indows/
-                     'windows-java'
-                  else
-                    'default-java'
-                  end
-                else 'default'
-                end
-
     @executable ||= "R"
-
-    platform_options = []
-
-    cmd = %Q<#{executable} #{platform_options.join(' ')} --slave>
+    cmd = "#{executable} --slave"
 
     # spawn R process
     @engine = IO.popen(cmd,"w+")
@@ -216,7 +198,6 @@ class RinRuby
     r_rinruby_parseable
 
     @socket = @server_socket.accept
-    echo(nil,true) if @platform =~ /.*-java/      # Redirect error messages on the Java platform
   end
 
   # The quit method will properly close the bridge between Ruby and R, freeing
@@ -290,7 +271,7 @@ class RinRuby
     end
     Signal.trap('INT') do
       @writer.print ''
-      @reader.gets if @platform !~ /java/
+      @reader.gets
       Signal.trap('INT') do
       end
       return true
