@@ -85,6 +85,12 @@ class RinRuby
   # Parse error
   ParseError = Class.new(Exception)
 
+  # Attempt to pull undefined variable
+  UndefinedVariableError = Class.new(Exception)
+
+  # Cannot convert data type to one that can be sent over wire
+  UnsupportedTypeError = Class.new(Exception)
+
   DEFAULT_OPTIONS = {
    :echo => true,
    :executable => nil,
@@ -531,33 +537,35 @@ class RinRuby
 
   def r_rinruby_pull
     @writer.puts <<-EOF
-      rinruby_pull <-function(var)
+      rinruby_pull <- function(var)
       {
-        if ( inherits(var ,"try-error") ) {
+        if (inherits(var, "try-error")) {
            writeBin(as.integer(#{RinRuby_Type_NotFound}),#{RinRuby_Socket},endian="big")
         } else {
           if (is.matrix(var)) {
             writeBin(as.integer(#{RinRuby_Type_Matrix}),#{RinRuby_Socket},endian="big")
             writeBin(as.integer(dim(var)[1]),#{RinRuby_Socket},endian="big")
             writeBin(as.integer(dim(var)[2]),#{RinRuby_Socket},endian="big")
-
-          }  else if ( is.double(var) ) {
+          } else if (is.double(var)) {
             writeBin(as.integer(#{RinRuby_Type_Double}),#{RinRuby_Socket},endian="big")
             writeBin(as.integer(length(var)),#{RinRuby_Socket},endian="big")
             writeBin(var,#{RinRuby_Socket},endian="big")
-          } else if ( is.integer(var) ) {
+          } else if (is.integer(var)) {
             writeBin(as.integer(#{RinRuby_Type_Integer}),#{RinRuby_Socket},endian="big")
             writeBin(as.integer(length(var)),#{RinRuby_Socket},endian="big")
             writeBin(var,#{RinRuby_Socket},endian="big")
-          } else if ( is.character(var) && ( length(var) == 1 ) ) {
+          } else if (is.character(var) && (length(var) == 1)) {
             writeBin(as.integer(#{RinRuby_Type_String}),#{RinRuby_Socket},endian="big")
             writeBin(as.integer(nchar(var)),#{RinRuby_Socket},endian="big")
             writeBin(var,#{RinRuby_Socket},endian="big")
-          } else if ( is.character(var) && ( length(var) > 1 ) ) {
+          } else if ( is.character(var) && (length(var) > 1)) {
             writeBin(as.integer(#{RinRuby_Type_String_Array}),#{RinRuby_Socket},endian="big")
             writeBin(as.integer(length(var)),#{RinRuby_Socket},endian="big")
           } else {
+            unknownType = paste(class(var), typeof(var), " ")
             writeBin(as.integer(#{RinRuby_Type_Unknown}),#{RinRuby_Socket},endian="big")
+            writeBin(as.integer(nchar(unknownType)),#{RinRuby_Socket},endian="big")
+            writeBin(unknownType,#{RinRuby_Socket},endian="big")
           }
         }
       }
@@ -637,19 +645,24 @@ class RinRuby
     original_value
   end
 
-  def pull_engine(string)
+  def pull_engine(variable)
     @writer.puts <<-EOF
-      rinruby_pull(try(#{string}))
+      rinruby_pull(try(#{variable}))
     EOF
 
     buffer = ""
-    @socket.read(4,buffer)
+    @socket.read(4, buffer)
     type = to_signed_int(buffer.unpack('N')[0].to_i)
     if ( type == RinRuby_Type_Unknown )
-      raise "Unsupported data type on R's end"
+      @socket.read(4, buffer)
+      length = to_signed_int(buffer.unpack('N')[0].to_i)
+      @socket.read(length, buffer)
+      result = buffer.dup
+      @socket.read(1, buffer)    # zero-terminated string
+      raise UnsupportedTypeError, "Unsupported R data type '#{result}'"
     end
     if ( type == RinRuby_Type_NotFound )
-      return nil
+      raise RinRuby::UndefinedVariableError, "Undefined variable #{variable}"
     end
     @socket.read(4,buffer)
     length = to_signed_int(buffer.unpack('N')[0].to_i)
@@ -668,13 +681,13 @@ class RinRuby
     elsif ( type == RinRuby_Type_String_Array )
       result = Array.new(length,'')
       for index in 0...length
-        result[index] = pull "#{string}[#{index+1}]"
+        result[index] = pull "#{variable}[#{index+1}]"
       end
     elsif (type == RinRuby_Type_Matrix)
       rows=length
       @socket.read(4,buffer)
       cols = to_signed_int(buffer.unpack('N')[0].to_i)
-      elements=pull "as.vector(#{string})"
+      elements=pull "as.vector(#{variable})"
       index=0
       result=Matrix.rows(rows.times.collect {|i|
         cols.times.collect {|j|

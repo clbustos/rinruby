@@ -118,6 +118,18 @@ describe RinRuby do
         end
       end
     end
+
+    it "raises UndefinedVariableError if pulling variable that is undefined" do
+      expect do
+        R.pull("miss")
+      end.to raise_error(RinRuby::UndefinedVariableError)
+    end
+
+    it "raises error message if trying to pull a type that cannot be sent over wire" do
+      expect do
+        R.pull("typeof")
+      end.to raise_error(RinRuby::UnsupportedTypeError, "Unsupported R data type 'function closure  '")
+    end
   end
 
   context "on quit" do
