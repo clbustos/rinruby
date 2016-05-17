@@ -1,6 +1,8 @@
 require File.expand_path(File.dirname(__FILE__) + '/spec_helper')
 puts "RinRuby #{RinRuby::VERSION} specification"
 
+R = RinRuby.new
+
 describe RinRuby do
   describe "on init" do
     it "should accept parameters as specified on Dahl & Crawford(2009)" do

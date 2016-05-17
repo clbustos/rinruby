@@ -889,11 +889,3 @@ class RinRuby
     raise "Cannot locate R executable"
   end
 end
-
-if ! defined?(R)
-  # R is an instance of RinRuby.  If for some reason the user does not want R to
-  # be initialized (to save system resources), then create a default value for R
-  # (e.g., <b>R=2</b> ) in which case RinRuby will not overwrite the value of R.
-
-  R = RinRuby.new
-end

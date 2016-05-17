@@ -26,6 +26,7 @@ Below is a simple example of RinRuby usage for simple linear regression. The sim
 #### Code
 
       require "rinruby"
+      R = RinRuby.new
       n = 10
       beta_0 = 1
       beta_1 = 0.25
