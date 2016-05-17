@@ -9,29 +9,30 @@ describe RinRuby do
       r = RinRuby.new(false, "R", 38500, 1)
 
       expect(r.echo_enabled).to be(false)
-      r.executable.should == "R"
-      r.port_number.should == 38500
-      r.port_width.should == 1
+      expect(r.executable).to eq("R")
+      expect(r.port_number).to eq(38500)
+      expect(r.port_width).to eq(1)
     end
 
     it "should accept :echo parameters" do
       r = RinRuby.new(:echo => false)
-      r.echo_enabled.should be false
+      expect(r.echo_enabled).to be(false)
     end
 
     it "should accept :port_number" do
-      port=38442+rand(3)
-      r=RinRuby.new(:port_number=>port,:port_width=>1)
-      r.port_number.should==port
+      port = 38442 + rand(3)
+      r = RinRuby.new(:port_number => port, :port_width => 1)
+      expect(r.port_number).to eq(port)
       r.quit
     end
 
     it "should accept :port_width" do
-      port=38442
-      port_width=rand(10)+1
-      r=RinRuby.new(:port=>port, :port_width=>port_width)
-      expect(r.port_width).to be == port_width
-      r.port_number.should satisfy {|v| v>=port and v < port+port_width}
+      port = 38442
+      port_width = rand(10) + 1
+      r = RinRuby.new(:port => port, :port_width => port_width)
+
+      expect(r.port_width).to eq(port_width)
+      expect(r.port_number).to satisfy { |v| v >= port && v < port + port_width }
     end
   end
 
@@ -50,60 +51,56 @@ describe RinRuby do
     it {should respond_to :echo}
 
     it "return correct values for complete?" do
-      R.eval("x<-1").should be true
+      expect(R.eval("x <- 1")).to be(true)
     end
 
     it "return false for complete? for incorrect expressions" do
-      R.complete?("x<-").should be false
+      expect(R.complete?("x <-")).to be(false)
     end
 
     it "correct eval should return true" do
-      R.complete?("x<-1").should be true
+      expect(R.complete?("x <- 1")).to be(true)
     end
 
     it "incorrect eval should raise an ParseError" do
-      lambda {R.eval("x<-")}.should raise_error(RinRuby::ParseError)
+      expect do
+        R.eval("x <-")
+      end.to raise_error(RinRuby::ParseError)
     end
   end
 
   context "on assign" do
     it "should assign correctly" do
-      x=rand
+      x = rand
       R.assign("x", x)
-      R.pull("x").should==x
+      expect(R.pull("x")).to eq(x)
     end
   end
 
   context "on pull" do
-    it "should be the same using pull than R# methods" do
-      x = rand
-      R.assign("x", x)
-      R.pull("x").should == x
-    end
-
     it "should pull a String" do
-      R.eval("x<-'Value'")
-      R.pull('x').should == 'Value'
+      R.eval("x <- 'Value'")
+      expect(R.pull("x")).to eq("Value")
     end
 
     it "should pull an Integer" do
-      R.eval("x<-1")
-      R.pull('x').should == 1
+      R.eval("x <- 1")
+      expect(R.pull("x")).to eq(1)
     end
 
     it "should pull a Float" do
-      R.eval("x<-1.5")
-      R.pull('x').should == 1.5
+      R.eval("x <- 1.5")
+      expect(R.pull("x")).to eq(1.5)
     end
 
     it "should pull an Array of Numeric" do
-      R.eval("x<-c(1,2.5,3)")
-      R.pull('x').should == [1, 2.5, 3]
+      R.eval("x <- c(1,2.5,3)")
+      expect(R.pull("x")).to eq([1, 2.5, 3])
     end
 
     it "should pull an Array of strings" do
-      R.eval("x<-c('a','b')")
-      R.pull('x').should == ['a','b']
+      R.eval("x <- c('a', 'b')")
+      expect(R.pull("x")).to eq(["a", "b"])
     end
 
     it "should push a Matrix" do
@@ -112,12 +109,12 @@ describe RinRuby do
         [rand, rand, rand]
       ]
 
-      R.assign('x',matrix)
+      R.assign('x', matrix)
       pulled_matrix = R.pull("x")
 
       matrix.row_size.times do |i|
         matrix.column_size.times do |j|
-          matrix[i,j].should be_within(1e-10).of(pulled_matrix[i,j])
+          expect(matrix[i,j]).to be_within(1e-10).of(pulled_matrix[i,j])
         end
       end
     end
@@ -125,16 +122,18 @@ describe RinRuby do
 
   context "on quit" do
     before(:each) do
-      @r=RinRuby.new(:echo=>false)
+      @r = RinRuby.new(:echo => false)
     end
 
     it "return true" do
-      @r.quit.should be true
+      expect(@r.quit).to be(true)
     end
 
     it "returns an error if used again" do
       @r.quit
-      lambda {@r.eval("x=1")}.should raise_error(RinRuby::EngineClosed)
+      expect do
+        @r.eval("x = 1")
+      end.to raise_error(RinRuby::EngineClosed)
     end
   end
 end
