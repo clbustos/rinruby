@@ -389,39 +389,6 @@ class RinRuby
     true
   end
 
-  # If a method is called which is not defined, then it is assumed that the
-  # user is attempting to either pull or assign a variable to R.  This allows
-  # for the short-hand equivalents to the pull and assign methods.  For
-  # example:
-  #
-  #      >> R.x = 2
-  #
-  # is the same as:
-  #
-  #      >> R.assign("x",2)
-  #
-  # Also:
-  #
-  #      >> n = R.x
-  #
-  # is the same as:
-  #
-  #      >> n = R.pull("x")
-  #
-  # The parameters passed to method_missing are those used for the pull or
-  # assign depending on the context.
-  def method_missing(symbol, *args)
-    name = symbol.id2name
-    if name =~ /(.*)=$/
-      raise ArgumentError, "You shouldn't assign nil" if args==[nil]
-      super if args.length != 1
-      assign($1,args[0])
-    else
-      super if args.length != 0
-      pull(name)
-    end
-  end
-
   # Data is copied from Ruby to R using the assign method or a short-hand
   # equivalent. For example:
   #
@@ -458,21 +425,6 @@ class RinRuby
   #   types.  Note that Fixnum or Bignum values that exceed the capacity of R's
   #   integers are silently converted to doubles.  Data in other formats must be
   #   coerced when copying to R.
-  #
-  # The assign method is an alternative to the simplified method, with some
-  # additional flexibility. When using the simplified method, the parameters of
-  # name and value are automatically used, in other words:
-  #
-  #      >> R.test = 144
-  #
-  # is the same as:
-  #
-  #      >> R.assign("test",144)
-  #
-  # Of course it would be confusing to use the shorthand notation to assign a
-  # variable named eval, echo, or any other already defined function. RinRuby
-  # would assume you were calling the function, rather than trying to assign a
-  # variable.
   #
   # When assigning an array containing differing types of variables, RinRuby
   # will follow R’s conversion conventions. An array that contains any Strings
@@ -511,12 +463,6 @@ class RinRuby
   #      -1.88887454545995
   #      0.781602719849499
   #
-  # RinRuby also supports a convenient short-hand notation when the argument to
-  # pull is simply a previously-defined R object (whose name conforms to Ruby's
-  # requirements for method names). For example:
-  #
-  #      >> copy_of_x = R.x
-  #
   # The explicit assign method, however, can take an arbitrary R statement. For
   # example:
   #
@@ -549,15 +495,6 @@ class RinRuby
   #   length one. Setting singleton=false will cause the pull method to shed the
   #   array, while singletons=true will return the number of string within an
   #   array.  The default is false.
-  #
-  # The pull method is an alternative to the simplified form where the
-  # parameters are automatically used.  For example:
-  #
-  #      >> puts R.test
-  #
-  # is the same as:
-  #
-  #      >> puts R.pull("test")
   def pull(string, singletons=false)
     raise EngineClosed if @engine.closed?
     if complete?(string)
