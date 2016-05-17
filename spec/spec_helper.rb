@@ -23,8 +23,6 @@ end
 
 class String
   def deindent
-    gsub /^[ \t]*/, '' 
+    gsub /^[ \t]*/, ''
   end
 end
-
-

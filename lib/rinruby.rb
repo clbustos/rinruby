@@ -176,23 +176,17 @@ class RinRuby
 
     # determine R platform
     @platform = case RUBY_PLATFORM
-                when /mswin/ then 'windows'
-                when /mingw/ then 'windows'
-                when /bccwin/ then 'windows'
-                when /cygwin/ then 'windows-cygwin'
                 when /java/
                   require 'java' #:nodoc:
                   if java.lang.System.getProperty("os.name") =~ /[Ww]indows/
-                    'windows-java'
+                     'windows-java'
                   else
                     'default-java'
                   end
                 else 'default'
                 end
 
-    if @executable == nil
-      @executable = ( @platform =~ /windows/ ) ? find_R_on_windows(@platform =~ /cygwin/) : 'R'
-    end
+    @executable ||= "R"
 
     platform_options = []
 
@@ -328,7 +322,7 @@ class RinRuby
       return false if line == RinRuby_Exit_Flag
       if echo_enabled && echo_eligible
         puts line
-        $stdout.flush if @platform !~ /windows/
+        $stdout.flush
       end
     end
     Signal.trap('INT') do
@@ -721,16 +715,6 @@ class RinRuby
     @writer.puts "rm(#{RinRuby_Parse_String})"
     result = to_signed_int(buffer.unpack('N')[0].to_i)
     return result==-1 ? false : true
-
-=begin
-
-    result = pull_engine("unlist(lapply(c('.*','^Error in parse.*','^Error in parse.*unexpected end of input.*'),
-      grep,try({parse(text=#{RinRuby_Parse_String}); 1}, silent=TRUE)))")
-
-    return true if result.length == 1
-    return false if result.length == 3
-    raise ParseError, "Parse error"
-=end
   end
   public :complete?
 
@@ -741,35 +725,5 @@ class RinRuby
     @writer.puts "rm(#{RinRuby_Parse_String})"
     return true if result == [0]
     raise ParseError, "Parse error"
-  end
-
-  def find_R_on_windows(cygwin)
-    path = '?'
-    for root in [ 'HKEY_LOCAL_MACHINE', 'HKEY_CURRENT_USER' ]
-      `reg query "#{root}\\Software\\R-core\\R" /v "InstallPath"`.split("\n").each do |line|
-        next if line !~ /^\s+InstallPath\s+REG_SZ\s+(.*)/
-        path = $1
-        while path.chomp!
-        end
-        break
-      end
-      break if path != '?'
-    end
-    raise "Cannot locate R executable" if path == '?'
-    if cygwin
-      path = `cygpath '#{path}'`
-      while path.chomp!
-      end
-      path.gsub!(' ','\ ')
-    else
-      path.gsub!('\\','/')
-    end
-    for hierarchy in [ 'bin', 'bin/i386', 'bin/x64' ]
-      target = "#{path}/#{hierarchy}/Rterm.exe"
-      if File.exists? target
-        return %Q<"#{target}">
-      end
-    end
-    raise "Cannot locate R executable"
   end
 end
