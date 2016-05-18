@@ -165,6 +165,7 @@ class RinRuby
     @hostname = @opts[:hostname]
     @echo_enabled = @opts[:echo]
     @echo_stderr = false
+    @echo_writer = @opts.fetch(:echo_writer, $stdout)
 
     # find available port
     while true
@@ -214,13 +215,9 @@ class RinRuby
       @writer.puts "q(save='no')"
       # TODO: Verify if read is needed
       @socket.read()
-      #@socket.close
       @engine.close
 
-
       @server_socket.close
-      #@reader.close
-      #@writer.close
       true
     ensure
       @engine.close unless @engine.closed?
@@ -308,8 +305,8 @@ class RinRuby
       break if found_eval_flag && ( found_stderr_flag == @echo_stderr )
       return false if line == RinRuby_Exit_Flag
       if echo_enabled && echo_eligible
-        puts line
-        $stdout.flush
+        @echo_writer.puts(line)
+        @echo_writer.flush
       end
     end
     Signal.trap('INT') do
@@ -471,6 +468,25 @@ class RinRuby
       end
     end
     [ @echo_enabled, @echo_stderr ]
+  end
+
+  # Captures the stdout from R for the duration of the block
+  # Usage:
+  #     output = r.capture do
+  #       r.eval "1 + 1"
+  #     end
+  def capture(&_block)
+    old_echo_enabled, old_echo_writer = @echo_enabled, @echo_writer
+    @echo_enabled = true
+    @echo_writer = StringIO.new
+
+    yield
+
+    @echo_writer.rewind
+    @echo_writer.read
+  ensure
+    @echo_enabled = old_echo_enabled
+    @echo_writer = old_echo_writer
   end
 
   private

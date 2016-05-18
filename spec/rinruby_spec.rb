@@ -148,4 +148,19 @@ describe RinRuby do
       end.to raise_error(RinRuby::EngineClosed)
     end
   end
+
+  context "capture" do
+    around(:each) do |spec|
+      @r = RinRuby.new
+      spec.run
+      @r.quit
+    end
+
+    it "captures output from the process into a variable" do
+      output = @r.capture do
+        @r.eval("1 + 1")
+      end
+      expect(output).to eq("[1] 2\n")
+    end
+  end
 end
