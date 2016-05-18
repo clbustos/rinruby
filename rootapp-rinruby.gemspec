@@ -4,10 +4,10 @@ $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
 require 'rinruby/version'
 
 Gem::Specification.new do |spec|
-  spec.name          = "rinruby"
+  spec.name          = "rootapp-rinruby"
   spec.version       = RinRuby::VERSION
-  spec.authors       = ["David Dahl", "Scott Crawford", "Claudio Bustos"]
-  spec.email         = ["rinruby@ddahl.org", "scott@ddahl.org", "clbustos@gmail.com"]
+  spec.author        = "ROOT devs"
+  spec.email         = "devs@joinroot.com"
   spec.summary       = %q{RinRuby is a Ruby library that integrates the R interpreter in Ruby}
   spec.description   = <<-EOF
   RinRuby is a Ruby library that integrates the R interpreter in Ruby, making
@@ -20,8 +20,8 @@ Gem::Specification.new do |spec|
   describes RinRuby usage, provides comprehensive documentation, gives several
   examples, and discusses RinRuby's implementation.
   EOF
-  spec.homepage      = "http://rinruby.ddahl.org"
-  spec.license       = "Copyright 2005-2008 David B. Dahl"
+  spec.homepage      = "https://github.com/Root-App/rinruby"
+  spec.license       = "GPLv3"
 
   spec.files         = `git ls-files`.split($/)
   spec.executables   = spec.files.grep(%r{^bin/}) { |f| File.basename(f) }
@@ -30,5 +30,4 @@ Gem::Specification.new do |spec|
 
   spec.add_development_dependency "rake"
   spec.add_development_dependency "rspec"
-  spec.add_development_dependency "hoe"
 end

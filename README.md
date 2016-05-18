@@ -6,7 +6,11 @@ Execute R code from Ruby.
 
 ### INSTALL
 
-* gem install rinruby
+* gem install rootapp-rinruby
+
+```ruby
+require "rinruby"
+```
 
 ### REQUIREMENTS
 

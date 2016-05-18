@@ -7,8 +7,6 @@ GEM
   remote: https://rubygems.org/
   specs:
     diff-lcs (1.2.5)
-    hoe (3.12.0)
-      rake (>= 0.8, < 11.0)
     rake (10.3.2)
     rspec (3.0.0)
       rspec-core (~> 3.0.0)
@@ -27,7 +25,9 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
-  hoe
   rake
   rinruby!
   rspec
+
+BUNDLED WITH
+   1.12.4
