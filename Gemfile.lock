@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    rinruby (2.0.3)
+    rootapp-rinruby (3.0.0)
 
 GEM
   remote: https://rubygems.org/
@@ -26,7 +26,7 @@ PLATFORMS
 
 DEPENDENCIES
   rake
-  rinruby!
+  rootapp-rinruby!
   rspec
 
 BUNDLED WITH

@@ -125,10 +125,8 @@ describe RinRuby do
       end
     end
 
-    it "raises UndefinedVariableError if pulling variable that is undefined" do
-      expect do
-        R.pull("miss")
-      end.to raise_error(RinRuby::UndefinedVariableError)
+    it "returns nil when pulling variable that doesn't exist" do
+      expect(R.pull("miss")).to be(nil)
     end
 
     it "raises error message if trying to pull a type that cannot be sent over wire" do

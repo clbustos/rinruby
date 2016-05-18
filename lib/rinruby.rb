@@ -85,9 +85,6 @@ class RinRuby
   # Parse error
   ParseError = Class.new(Exception)
 
-  # Attempt to pull undefined variable
-  UndefinedVariableError = Class.new(Exception)
-
   # Cannot convert data type to one that can be sent over wire
   UnsupportedTypeError = Class.new(Exception)
 
@@ -424,7 +421,7 @@ class RinRuby
     raise EngineClosed if @engine.closed?
     if complete?(string)
       result = pull_engine(string)
-      if ( ! singletons ) && ( result.length == 1 ) && ( result.class != String )
+      if !singletons && result && result.length == 1 && result.class != String
         result = result[0]
       end
       result
@@ -678,7 +675,7 @@ class RinRuby
       raise UnsupportedTypeError, "Unsupported R data type '#{result}'"
     end
     if ( type == RinRuby_Type_NotFound )
-      raise RinRuby::UndefinedVariableError, "Undefined variable #{variable}"
+      return nil
     end
     @socket.read(4,buffer)
     length = to_signed_int(buffer.unpack('N')[0].to_i)
