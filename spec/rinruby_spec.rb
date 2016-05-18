@@ -4,6 +4,12 @@ puts "RinRuby #{RinRuby::VERSION} specification"
 R = RinRuby.new
 
 describe RinRuby do
+  describe "VERSION" do
+    it "is set" do
+      expect(RinRuby::VERSION).to match(/\d+\.\d+\.\d+/)
+    end
+  end
+
   describe "on init" do
     it "should accept parameters as specified on Dahl & Crawford(2009)" do
       r = RinRuby.new(false, "R", 38500, 1)

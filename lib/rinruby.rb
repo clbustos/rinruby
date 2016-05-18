@@ -69,9 +69,9 @@
 #++
 require 'matrix'
 require 'socket'
+require 'rinruby/version'
 
 class RinRuby
-  VERSION = '2.0.3'
 
   attr_accessor :echo_enabled
   attr_reader :executable
