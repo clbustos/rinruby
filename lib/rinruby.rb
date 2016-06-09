@@ -89,11 +89,11 @@ class RinRuby
   UnsupportedTypeError = Class.new(Exception)
 
   DEFAULT_OPTIONS = {
-   :echo => true,
-   :executable => nil,
-   :port_number => 38442,
-   :port_width => 1000,
-   :hostname => '127.0.0.1'
+      :echo => true,
+      :executable => nil,
+      :port_number => 38442,
+      :port_width => 1000,
+      :hostname => '127.0.0.1'
   }.freeze
 
   # RinRuby is invoked within a Ruby script (or the interactive "irb" prompt
@@ -179,14 +179,14 @@ class RinRuby
     cmd = "#{executable} --slave"
 
     # spawn R process
-    @engine = IO.popen(cmd,"w+")
+    @engine = IO.popen(cmd, "w+")
     @reader = @engine
     @writer = @engine
     raise "Engine closed" if @engine.closed?
 
     # connect to the server
     @writer.puts <<-EOF
-    #{RinRuby_KeepTrying_Variable} <- TRUE
+#{RinRuby_KeepTrying_Variable} <- TRUE
       while ( #{RinRuby_KeepTrying_Variable} ) {
     #{RinRuby_Socket} <- try(suppressWarnings(socketConnection("#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")),TRUE)
         if ( inherits(#{RinRuby_Socket},"try-error") ) {
@@ -261,7 +261,7 @@ class RinRuby
   #   the current echo behavior.
   def eval(string, echo_override=nil)
     raise EngineClosed if @engine.closed?
-    echo_enabled = ( echo_override != nil ) ? echo_override : @echo_enabled
+    echo_enabled = (echo_override != nil) ? echo_override : @echo_enabled
     if complete?(string)
       @writer.puts string
       @writer.puts "warning('#{RinRuby_Stderr_Flag}',immediate.=TRUE)" if @echo_stderr
@@ -270,7 +270,7 @@ class RinRuby
       raise ParseError, "Parse error on eval:#{string}"
     end
     Signal.trap('INT') do
-      @writer.print ''
+      @writer.print ''
       @reader.gets
       Signal.trap('INT') do
       end
@@ -285,12 +285,12 @@ class RinRuby
       rescue
         return false
       end
-      if ! line
+      if !line
         return false
       end
       while line.chomp!
       end
-      line = line[8..-1] if line[0] == 27     # Delete escape sequence
+      line = line[8..-1] if line[0] == 27 # Delete escape sequence
       if line == "[1] \"#{RinRuby_Eval_Flag}\""
         found_eval_flag = true
         echo_eligible = false
@@ -299,7 +299,7 @@ class RinRuby
         found_stderr_flag = true
         echo_eligible = false
       end
-      break if found_eval_flag && ( found_stderr_flag == @echo_stderr )
+      break if found_eval_flag && (found_stderr_flag == @echo_stderr)
       return false if line == RinRuby_Exit_Flag
       if echo_enabled && echo_eligible
         @echo_writer.puts(line)
@@ -356,9 +356,9 @@ class RinRuby
   # are only integers that are suffciently small (in absolute value), then the
   # result will be a numeric vector of integers in R.
   def assign(name, value)
-     raise EngineClosed if @engine.closed?
+    raise EngineClosed if @engine.closed?
     if assignable?(name)
-      assign_engine(name,value)
+      assign_engine(name, value)
     else
       raise ParseError, "Parse error"
     end
@@ -430,6 +430,10 @@ class RinRuby
     end
   end
 
+  def pull_boolean(string)
+    pull("toString(#{string})") == "TRUE"
+  end
+
   # The echo method controls whether the eval method displays output from R
   # and, if echo is enabled, whether messages, warnings, and errors from stderr
   # are also displayed.
@@ -448,23 +452,23 @@ class RinRuby
   #   practice but it can lead to interleaving output which may confuse RinRuby.
   #   In such cases, stderr redirection should not be used.  Echoing must be
   #   enabled when using stderr redirection.
-  def echo(enable=nil,stderr=nil)
-    if ( enable == false ) && ( stderr == true )
+  def echo(enable=nil, stderr=nil)
+    if (enable == false) && (stderr == true)
       raise "You can only redirect stderr if you are echoing is enabled."
     end
-    if ( enable != nil ) && ( enable != @echo_enabled )
-      echo(nil,false) if ! enable
-      @echo_enabled = ! @echo_enabled
+    if (enable != nil) && (enable != @echo_enabled)
+      echo(nil, false) if !enable
+      @echo_enabled = !@echo_enabled
     end
-    if @echo_enabled && ( stderr != nil ) && ( stderr != @echo_stderr )
-      @echo_stderr = ! @echo_stderr
+    if @echo_enabled && (stderr != nil) && (stderr != @echo_stderr)
+      @echo_stderr = !@echo_stderr
       if @echo_stderr
         eval "sink(stdout(),type='message')"
       else
         eval "sink(type='message')"
       end
     end
-    [ @echo_enabled, @echo_stderr ]
+    [@echo_enabled, @echo_stderr]
   end
 
   # Captures the stdout from R for the duration of the block
@@ -587,9 +591,9 @@ class RinRuby
 
   def to_signed_int(y)
     if y.kind_of?(Integer)
-      ( y > RinRuby_Half_Max_Unsigned_Integer ) ? -(RinRuby_Max_Unsigned_Integer-y) : ( y == RinRuby_NA_R_Integer ? nil : y )
+      (y > RinRuby_Half_Max_Unsigned_Integer) ? -(RinRuby_Max_Unsigned_Integer-y) : (y == RinRuby_NA_R_Integer ? nil : y)
     else
-      y.collect { |x| ( x > RinRuby_Half_Max_Unsigned_Integer ) ? -(RinRuby_Max_Unsigned_Integer-x) : ( x == RinRuby_NA_R_Integer ? nil : x ) }
+      y.collect { |x| (x > RinRuby_Half_Max_Unsigned_Integer) ? -(RinRuby_Max_Unsigned_Integer-x) : (x == RinRuby_NA_R_Integer ? nil : x) }
     end
   end
 
@@ -597,7 +601,7 @@ class RinRuby
     original_value = value
     # Special assign for matrixes
     if value.kind_of?(::Matrix)
-      values=value.row_size.times.collect {|i| value.column_size.times.collect {|j| value[i,j]}}.flatten
+      values=value.row_size.times.collect { |i| value.column_size.times.collect { |j| value[i, j] } }.flatten
       eval "#{name}=matrix(c(#{values.join(',')}), #{value.row_size}, #{value.column_size}, TRUE)"
       return original_value
     end
@@ -606,16 +610,16 @@ class RinRuby
       type = RinRuby_Type_String
       length = 1
     elsif value.kind_of?(Integer)
-      if ( value >= RinRuby_Min_R_Integer ) && ( value <= RinRuby_Max_R_Integer )
-        value = [ value.to_i ]
+      if (value >= RinRuby_Min_R_Integer) && (value <= RinRuby_Max_R_Integer)
+        value = [value.to_i]
         type = RinRuby_Type_Integer
       else
-        value = [ value.to_f ]
+        value = [value.to_f]
         type = RinRuby_Type_Double
       end
       length = 1
     elsif value.kind_of?(Float)
-      value = [ value.to_f ]
+      value = [value.to_f]
       type = RinRuby_Type_Double
       length = 1
     elsif value.kind_of?(Array)
@@ -623,14 +627,14 @@ class RinRuby
         if value.any? { |x| x.kind_of?(String) }
           eval "#{name} <- character(#{value.length})"
           for index in 0...value.length
-            assign_engine("#{name}[#{index}+1]",value[index])
+            assign_engine("#{name}[#{index}+1]", value[index])
           end
           return original_value
         elsif value.any? { |x| x.kind_of?(Float) }
           type = RinRuby_Type_Double
           value = value.collect { |x| x.to_f }
         elsif value.all? { |x| x.kind_of?(Integer) }
-          if value.all? { |x| ( x >= RinRuby_Min_R_Integer ) && ( x <= RinRuby_Max_R_Integer ) }
+          if value.all? { |x| (x >= RinRuby_Min_R_Integer) && (x <= RinRuby_Max_R_Integer) }
             type = RinRuby_Type_Integer
           else
             value = value.collect { |x| x.to_f }
@@ -648,12 +652,12 @@ class RinRuby
     end
     @writer.puts "#{name} <- rinruby_get_value()"
 
-    @socket.write([type,length].pack('NN'))
-    if ( type == RinRuby_Type_String )
+    @socket.write([type, length].pack('NN'))
+    if (type == RinRuby_Type_String)
       @socket.write(value)
-      @socket.write([0].pack('C'))   # zero-terminated strings
+      @socket.write([0].pack('C')) # zero-terminated strings
     else
-      @socket.write(value.pack( ( type==RinRuby_Type_Double ? 'G' : 'N' )*length ))
+      @socket.write(value.pack((type==RinRuby_Type_Double ? 'G' : 'N')*length))
     end
     original_value
   end
@@ -666,48 +670,51 @@ class RinRuby
     buffer = ""
     @socket.read(4, buffer)
     type = to_signed_int(buffer.unpack('N')[0].to_i)
-    if ( type == RinRuby_Type_Unknown )
+    if (type == RinRuby_Type_Unknown)
       @socket.read(4, buffer)
       length = to_signed_int(buffer.unpack('N')[0].to_i)
       @socket.read(length, buffer)
       result = buffer.dup
-      @socket.read(1, buffer)    # zero-terminated string
+      @socket.read(1, buffer) # zero-terminated string
       raise UnsupportedTypeError, "Unsupported R data type '#{result}'"
     end
-    if ( type == RinRuby_Type_NotFound )
+    if (type == RinRuby_Type_NotFound)
       return nil
     end
-    @socket.read(4,buffer)
+    @socket.read(4, buffer)
     length = to_signed_int(buffer.unpack('N')[0].to_i)
 
-    if ( type == RinRuby_Type_Double )
-      @socket.read(8*length,buffer)
+    if (type == RinRuby_Type_Double)
+      @socket.read(8*length, buffer)
       result = buffer.unpack('G'*length)
-    elsif ( type == RinRuby_Type_Integer )
-      @socket.read(4*length,buffer)
+    elsif (type == RinRuby_Type_Integer)
+      @socket.read(4*length, buffer)
       result = to_signed_int(buffer.unpack('N'*length))
-    elsif ( type == RinRuby_Type_String )
-      @socket.read(length,buffer)
+    elsif (type == RinRuby_Type_String)
+      @socket.read(length, buffer)
       result = buffer.dup
-      @socket.read(1,buffer)    # zero-terminated string
+      @socket.read(1, buffer) # zero-terminated string
       result
-    elsif ( type == RinRuby_Type_String_Array )
-      result = Array.new(length,'')
+    elsif (type == RinRuby_Type_String_Array)
+      result = Array.new(length, '')
       for index in 0...length
         result[index] = pull "#{variable}[#{index+1}]"
       end
     elsif (type == RinRuby_Type_Matrix)
       rows=length
-      @socket.read(4,buffer)
+      @socket.read(4, buffer)
       cols = to_signed_int(buffer.unpack('N')[0].to_i)
       elements=pull "as.vector(#{variable})"
       index=0
-      result=Matrix.rows(rows.times.collect {|i|
-        cols.times.collect {|j|
+      result=Matrix.rows(rows.times.collect { |i|
+        cols.times.collect { |j|
           elements[(j*rows)+i]
         }
       })
-      def result.length; 2;end
+
+      def result.length;
+        2;
+      end
     else
       raise "Unsupported data type on Ruby's end"
     end
@@ -718,16 +725,17 @@ class RinRuby
     assign_engine(RinRuby_Parse_String, string)
     @writer.puts "rinruby_parseable(#{RinRuby_Parse_String})"
     buffer=""
-    @socket.read(4,buffer)
+    @socket.read(4, buffer)
     @writer.puts "rm(#{RinRuby_Parse_String})"
     result = to_signed_int(buffer.unpack('N')[0].to_i)
     return result==-1 ? false : true
   end
+
   public :complete?
 
   def assignable?(string)
-    raise ParseError, "Parse error" if ! complete?(string)
-    assign_engine(RinRuby_Parse_String,string)
+    raise ParseError, "Parse error" if !complete?(string)
+    assign_engine(RinRuby_Parse_String, string)
     result = pull_engine("as.integer(ifelse(inherits(try({eval(parse(text=paste(#{RinRuby_Parse_String},'<- 1')))}, silent=TRUE),'try-error'),1,0))")
     @writer.puts "rm(#{RinRuby_Parse_String})"
     return true if result == [0]

@@ -134,6 +134,13 @@ describe RinRuby do
         R.pull("typeof")
       end.to raise_error(RinRuby::UnsupportedTypeError, "Unsupported R data type 'function closure  '")
     end
+
+    it "should pull a Boolean" do
+      R.eval("x <- TRUE\ny <- 1")
+      expect(R.pull("toString(x)")).to be_truthy
+      expect(R.pull_boolean("x")).to be_truthy
+      expect(R.pull_boolean("y")).to be_falsey
+    end
   end
 
   context "on quit" do
