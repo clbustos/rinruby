@@ -1,3 +1,6 @@
+[![Build Status](https://travis-ci.org/sebastianzillessen/rinruby.svg?branch=master)](https://travis-ci.org/sebastianzillessen/rinruby)
+
+
 # rinruby
 
 Execute R code from Ruby.
