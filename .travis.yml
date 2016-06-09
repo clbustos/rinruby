@@ -15,3 +15,4 @@ script:
 before_install:
   - sudo apt-get update -qq
   - sudo apt-get install -y r-base r-base-dev
+  - gem install bundler
