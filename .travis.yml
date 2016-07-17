@@ -7,10 +7,10 @@ rvm:
 - 2.2.4
 - jruby-19mode
 script: bundle exec rspec
-env:
-  global:
-    secure: LOi0UhDbhZP95zThnEHOHQcyHI2dsi/FxqKJB/e65geT3WufuTGQ3/dl5k+1N/14DLPHSAZqgS9w6I3f1fO6a4tKd8r5FLFlA2H0SxsF+RRs0nrW9HD57uN42twIw1wCPVMpKeV4apMwO4YL/O8WgduVlhEc/9wuLap3WP9zLIM8rmKvuziteZVWdVGE2pO+YKsxb0HqRcjgbjxjr17sxEa7oam41z3S4nzqtRU5/XeBqVyVfHpVuw2rSeRYCYyII/+BfVlnpFWhsVbYN3BFhNyCQqEd0W+C8TONVPG3ug8G6ONIJzgJKj4ez6eyVrK/51Gcpzu8kqT4HHZF1FbPoXrAgPd0TSe7yupMGQTJzQwcCgNDsm6SBUbT/ifuTi95yIFQjHS566QCIy9HcJxG3IMJgJcA4UP6muhwm9SzYTO7ee8yQJcSux5LxlxtmgHAOh2YiU/k3k7iVCtjokWMCJmCiXqu/xAw+4zB3x8HZwl6eRZ9G4s9IEh8cFOcKWi9RG48Oyf/f7xAarp4uy0Z38eTa8+5XSRf8lmvDPQ8rTNaYi3/0mLOTOpqcnL4vMfT4PL1PnHc7Mppv7WJBNlkhfQKLHZDfSCWPBxbiIWvfiJIKMeu3Bi6xz6z3aBRYaNdZdLCMy2byLdk7u06v08H0Ubaq6Fo/YRQN6O/IWB8LJw=
 before_install:
 - sudo apt-get update -qq
 - sudo apt-get install -y r-base r-base-dev
 - gem install bundler
+addons:
+  code_climate:
+    repo_token: 4bdb8ebb9430dd415c3145c68b7919a8feec286ed2544168188e61707b908d8a
