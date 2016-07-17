@@ -3,3 +3,4 @@ doc
 *~
 *.gem
 .idea/
+Gemfile.lock
