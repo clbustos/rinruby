@@ -50,7 +50,7 @@ Variables cannot be assigned directly anymore. But you need to use `assign(name,
 ### REQUIREMENTS
 
 * R
-
+* Ruby >= 2.0.0 
 ### LICENSE
 
 GPL-3. See LICENSE.txt for more information.
