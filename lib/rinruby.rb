@@ -431,7 +431,14 @@ class RinRuby
   end
 
   def pull_boolean(string)
-    pull("toString(#{string})") == "TRUE"
+    res = pull("toString(#{string})")
+    if res == "TRUE"
+      return true
+    elsif res == "FALSE"
+      return false
+    else
+      raise ParseError, "#{string} was no defined boolean variable in the script"
+    end
   end
 
   # The echo method controls whether the eval method displays output from R
