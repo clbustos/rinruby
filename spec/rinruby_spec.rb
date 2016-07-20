@@ -46,15 +46,15 @@ describe RinRuby do
     R.echo(false)
   end
 
-  subject {R}
+  subject { R }
 
   context "basic methods" do
-    it {should respond_to :eval}
-    it {should respond_to :quit}
-    it {should respond_to :assign}
-    it {should respond_to :pull}
-    it {should respond_to :quit}
-    it {should respond_to :echo}
+    it { should respond_to :eval }
+    it { should respond_to :quit }
+    it { should respond_to :assign }
+    it { should respond_to :pull }
+    it { should respond_to :quit }
+    it { should respond_to :echo }
 
     it "return correct values for complete?" do
       expect(R.eval("x <- 1")).to be(true)
@@ -111,8 +111,8 @@ describe RinRuby do
 
     it "should push a Matrix" do
       matrix = Matrix[
-        [rand, rand, rand],
-        [rand, rand, rand]
+          [rand, rand, rand],
+          [rand, rand, rand]
       ]
 
       R.assign('x', matrix)
@@ -120,7 +120,7 @@ describe RinRuby do
 
       matrix.row_size.times do |i|
         matrix.column_size.times do |j|
-          expect(matrix[i,j]).to be_within(1e-10).of(pulled_matrix[i,j])
+          expect(matrix[i, j]).to be_within(1e-10).of(pulled_matrix[i, j])
         end
       end
     end
@@ -139,7 +139,7 @@ describe RinRuby do
       R.eval("x <- TRUE\ny <- 1")
       expect(R.pull("toString(x)")).to be_truthy
       expect(R.pull_boolean("x")).to be_truthy
-      expect(R.pull_boolean("y")).to be_falsey
+      expect(R.pull_boolean("y")).to raise_error(ParseError)
     end
   end
 
