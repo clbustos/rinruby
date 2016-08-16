@@ -139,7 +139,11 @@ describe RinRuby do
       R.eval("x <- TRUE\ny <- 1")
       expect(R.pull("toString(x)")).to be_truthy
       expect(R.pull_boolean("x")).to be_truthy
-      expect(R.pull_boolean("y")).to raise_error(ParseError)
+    end
+
+    it "should raise a parse error" do
+      R.eval("x <- TRUE\ny <- 1")
+      expect{R.pull_boolean("y")}.to raise_error(RinRuby::ParseError)
     end
   end
 
