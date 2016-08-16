@@ -1,16 +1,14 @@
-language:
-  ruby
-
+language: ruby
 rvm:
-  - '1.8.7'
-  - '1.9.3'
-  - '2.0.0'
-  - '2.1.1'
-  - jruby-19mode
-#  - rbx-2.1.1
-script:
-  bundle exec rspec 
-  
+- 2.0.0
+- 2.1.1
+- 2.2.4
+- jruby-19mode
+script: bundle exec rspec
 before_install:
-  - sudo apt-get update -qq
-  - sudo apt-get install -y r-base r-base-dev
+- sudo apt-get update -qq
+- sudo apt-get install -y r-base r-base-dev
+- gem install bundler
+addons:
+  code_climate:
+    repo_token: 4bdb8ebb9430dd415c3145c68b7919a8feec286ed2544168188e61707b908d8a
