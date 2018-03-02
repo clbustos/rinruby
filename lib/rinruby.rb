@@ -767,15 +767,17 @@ def initialize(*args)
       path = `cygpath '#{path}'`
       while path.chomp!
       end
-      path.gsub!(' ','\ ')
+      path = [path.gsub(' ','\ '), path]
     else
-      path.gsub!('\\','/')
+      path = [path.gsub('\\','/')]
     end
-    for hierarchy in [ 'bin', 'bin/i386', 'bin/x64' ]
-      target = "#{path}/#{hierarchy}/Rterm.exe"
-      if File.exists? target
-        return %Q<"#{target}">
-      end
+    for hierarchy in [ 'bin', 'bin/x64', 'bin/i386']
+      path.each{|item|
+        target = "#{item}/#{hierarchy}/Rterm.exe"
+        if File.exists? target
+          return %Q<"#{target}">
+        end
+      }
     end
     raise "Cannot locate R executable"
   end
