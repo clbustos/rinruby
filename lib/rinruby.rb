@@ -753,7 +753,15 @@ def initialize(*args)
   def find_R_on_windows(cygwin)
     path = '?'
     for root in [ 'HKEY_LOCAL_MACHINE', 'HKEY_CURRENT_USER' ]
-      `reg query "#{root}\\Software\\R-core\\R" /v "InstallPath" /s`.split("\n").each do |line|
+      proc{|str| # Remove invalid byte sequence
+        if RUBY_VERSION >= "2.1.0" then
+          str.scrub
+        elsif RUBY_VERSION >= "1.9.0" then
+          str.chars.collect{|c| (c.valid_encoding?) ? c : '*'}.join
+        else
+          str
+        end
+      }.call(`reg query "#{root}\\Software\\R-core" /v "InstallPath" /s`).each_line do |line|
         next if line !~ /^\s+InstallPath\s+REG_SZ\s+(.*)/
         path = $1
         while path.chomp!
