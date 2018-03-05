@@ -753,7 +753,7 @@ def initialize(*args)
   def find_R_on_windows(cygwin)
     path = '?'
     for root in [ 'HKEY_LOCAL_MACHINE', 'HKEY_CURRENT_USER' ]
-      `reg query "#{root}\\Software\\R-core\\R" /v "InstallPath"`.split("\n").each do |line|
+      `reg query "#{root}\\Software\\R-core\\R" /v "InstallPath" /s`.split("\n").each do |line|
         next if line !~ /^\s+InstallPath\s+REG_SZ\s+(.*)/
         path = $1
         while path.chomp!
