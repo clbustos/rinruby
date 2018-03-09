@@ -770,7 +770,18 @@ def initialize(*args)
       end
       break if path != '?'
     end
-    raise "Cannot locate R executable" if path == '?'
+    if path == '?'
+      # search at default install path
+      path = [
+        "Program Files",
+        "Program Files (x86)"
+      ].collect{|prog_dir|
+        Dir::glob(File::join(
+            cygwin ? "/cygdrive/c" : "C:",
+            prog_dir, "R", "*"))
+      }.flatten[0]
+      raise "Cannot locate R executable" unless path
+    end
     if cygwin
       path = `cygpath '#{path}'`
       while path.chomp!
