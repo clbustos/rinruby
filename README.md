@@ -1,6 +1,9 @@
 # rinruby
 * http://rinruby.ddahl.org/
 
+
+[![Build Status](https://travis-ci.org/clbustos/rinruby.svg?branch=master)](https://travis-ci.org/clbustos/rinruby)
+
 ### DESCRIPTION
 
 RinRuby is a Ruby library that integrates the R interpreter in Ruby, making R's statistical routines and graphics available within Ruby.  The library consists of a single Ruby script that is simple to install and does not require any special compilation or installation of R.  Since the library is 100% pure Ruby, it works on a variety of operating systems, Ruby implementations, and versions of R.  RinRuby's methods are simple, making for readable code.  The {website [rinruby.ddahl.org]}[http://rinruby.ddahl.org] describes RinRuby usage, provides comprehensive documentation, gives several examples, and discusses RinRuby's implementation.
