@@ -15,11 +15,11 @@ Developed by David B. Dahl
 Documented by David B. Dahl and Scott Crawford
 Homepage: http://rinruby.ddahl.org
 
-Contributors: Claudio Bustos
+Maintainer: Claudio Bustos
 
 ### FEATURES/PROBLEMS
 
-* Pure Ruby. Works on Ruby 1.8.7, 1.9 and JRuby 1.4
+* Pure Ruby. Works on Ruby 2.2, 2.4 and JRuby-head (2018/03/29). There isn't any specific code that impides to use Ruby < 2.0, but is deprecated.
 * Slower than RSRuby, but more robust
 
 ### SYNOPSIS
