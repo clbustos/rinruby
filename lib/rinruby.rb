@@ -753,20 +753,40 @@ def initialize(*args)
   def find_R_on_windows(cygwin)
     path = '?'
     for root in [ 'HKEY_LOCAL_MACHINE', 'HKEY_CURRENT_USER' ]
-      proc{|str| # Remove invalid byte sequence
-        if RUBY_VERSION >= "2.1.0" then
-          str.scrub
-        elsif RUBY_VERSION >= "1.9.0" then
-          str.chars.collect{|c| (c.valid_encoding?) ? c : '*'}.join
-        else
-          str
+      if cygwin then
+        [:w, :W].collect{|opt| # [64bit, then 32bit registry]
+          [:R64, :R].collect{|mode|
+            `regtool list -#{opt} /#{root}/Software/R-core/#{mode} 2>/dev/null`.lines.collect{|v|
+              v =~ /^\d\.\d\.\d/ ? $& : nil
+            }.compact.sort{|a, b| # latest version has higher priority
+              b <=> a
+            }.collect{|ver|
+              ["-#{opt}", "/#{root}/Software/R-core/#{mode}/#{ver}/InstallPath"]
+            }
+          }
+        }.flatten(2).each{|args|
+          v = `regtool get #{args.join(' ')}`.chomp
+          unless v.empty? then
+            path = v
+            break
+          end
+        }
+      else
+        proc{|str| # Remove invalid byte sequence
+          if RUBY_VERSION >= "2.1.0" then
+            str.scrub
+          elsif RUBY_VERSION >= "1.9.0" then
+            str.chars.collect{|c| (c.valid_encoding?) ? c : '*'}.join
+          else
+            str
+          end
+        }.call(`reg query "#{root}\\Software\\R-core" /v "InstallPath" /s`).each_line do |line|
+          next if line !~ /^\s+InstallPath\s+REG_SZ\s+(.*)/
+          path = $1
+          while path.chomp!
+          end
+          break
         end
-      }.call(`reg query "#{root}\\Software\\R-core" /v "InstallPath" /s`).each_line do |line|
-        next if line !~ /^\s+InstallPath\s+REG_SZ\s+(.*)/
-        path = $1
-        while path.chomp!
-        end
-        break
       end
       break if path != '?'
     end
