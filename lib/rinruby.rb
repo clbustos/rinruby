@@ -164,11 +164,10 @@ def initialize(*args)
     @reader = @engine
     @writer = @engine
     raise "Engine closed" if @engine.closed?
-    r_rinruby_com_open
+    r_rinruby_socket_io
     r_rinruby_get_value
     r_rinruby_pull
     r_rinruby_parseable
-    @socket = @server_socket.accept
     echo(nil,true) if @platform =~ /.*-java/      # Redirect error messages on the Java platform
   end
 
@@ -177,9 +176,6 @@ def initialize(*args)
   def quit
     begin
       @writer.puts "q(save='no')"
-      # TODO: Verify if read is needed
-      @socket.read()
-      #@socket.close
       @engine.close
 
 
@@ -500,7 +496,6 @@ def initialize(*args)
   RinRuby_Type_String_Array = 3
   RinRuby_Type_Matrix = 4
 
-  RinRuby_KeepTrying_Variable = ".RINRUBY.KEEPTRYING.VARIABLE"
   RinRuby_Length_Variable = ".RINRUBY.PULL.LENGTH.VARIABLE"
   RinRuby_Type_Variable = ".RINRUBY.PULL.TYPE.VARIABLE"
   RinRuby_Socket = ".RINRUBY.PULL.SOCKET"
@@ -516,25 +511,14 @@ def initialize(*args)
   RinRuby_Min_R_Integer = -2**31+1
   #:startdoc:
 
-  def r_rinruby_com_open
+  def r_rinruby_socket_io
     @writer.puts <<-EOF
-      #{RinRuby_KeepTrying_Variable} <- TRUE
-      while ( #{RinRuby_KeepTrying_Variable} ) {
-        #{RinRuby_Socket} <- try(suppressWarnings(socketConnection("#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")),TRUE)
-        if ( inherits(#{RinRuby_Socket},"try-error") ) {
-          Sys.sleep(0.1)
-        } else {
-          #{RinRuby_KeepTrying_Variable} <- FALSE
-        }
-      }
-      rm(#{RinRuby_KeepTrying_Variable})
-        
-      #{RinRuby_Socket}.write <- function(v, ...){
+      #{RinRuby_Socket}.write <- function(con, v, ...){
         invisible(lapply(list(v, ...), function(v2){
-            writeBin(v2, #{RinRuby_Socket}, endian="big")}))
+            writeBin(v2, con, endian="big")}))
       }
-      #{RinRuby_Socket}.read <- function(vtype, len){
-        invisible(readBin(#{RinRuby_Socket}, vtype(), len, endian="big"))
+      #{RinRuby_Socket}.read <- function(con, vtype, len){
+        invisible(readBin(con, vtype(), len, endian="big"))
       }
     EOF
   end
@@ -542,12 +526,14 @@ def initialize(*args)
   def r_rinruby_parseable
     @writer.puts <<-EOF
     rinruby_parseable<-function(var) {
+      con <- socketConnection("#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")
       result=try(parse(text=var),TRUE)
       if(inherits(result, "try-error")) {
-        #{RinRuby_Socket}.write(as.integer(-1))
+        #{RinRuby_Socket}.write(con, as.integer(-1))
       } else {
-        #{RinRuby_Socket}.write(as.integer(1))
+        #{RinRuby_Socket}.write(con, as.integer(1))
       }
+      close(con)
     }
     EOF
   end
@@ -555,53 +541,62 @@ def initialize(*args)
   def r_rinruby_get_value
     @writer.puts <<-EOF
     rinruby_get_value <-function() {
+      con <- socketConnection("#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")
       value <- NULL
-      type <- #{RinRuby_Socket}.read(integer, 1)
-      length <- #{RinRuby_Socket}.read(integer, 1)
+      type <- #{RinRuby_Socket}.read(con, integer, 1)
+      length <- #{RinRuby_Socket}.read(con, integer, 1)
       if ( type == #{RinRuby_Type_Double} ) {
-        value <- #{RinRuby_Socket}.read(numeric, length)
-        } else if ( type == #{RinRuby_Type_Integer} ) {
-        value <- #{RinRuby_Socket}.read(integer, length)
-        } else if ( type == #{RinRuby_Type_String} ) {
-        value <- #{RinRuby_Socket}.read(character, 1)
-        } else {
+        value <- #{RinRuby_Socket}.read(con, numeric, length)
+      } else if ( type == #{RinRuby_Type_Integer} ) {
+        value <- #{RinRuby_Socket}.read(con, integer, length)
+      } else if ( type == #{RinRuby_Type_String} ) {
+        value <- #{RinRuby_Socket}.read(con, character, 1)
+      } else {
           value <-NULL
-        }
-      value
       }
+      close(con)
+      value
+    }
     EOF
   end
 
   def r_rinruby_pull
- @writer.puts <<-EOF
- rinruby_pull <-function(var)
+    @writer.puts <<-EOF
+    rinruby_pull <-function(var)
 {
+  con <- socketConnection("#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")
   if ( inherits(var ,"try-error") ) {
-    #{RinRuby_Socket}.write(as.integer(#{RinRuby_Type_NotFound}))
+    #{RinRuby_Socket}.write(con, as.integer(#{RinRuby_Type_NotFound}))
   } else {
     if (is.matrix(var)) {
-      #{RinRuby_Socket}.write(as.integer(#{RinRuby_Type_Matrix}),
+      #{RinRuby_Socket}.write(con,
+          as.integer(#{RinRuby_Type_Matrix}),
           as.integer(dim(var)[1]),
           as.integer(dim(var)[2]))
     }  else if ( is.double(var) ) {
-      #{RinRuby_Socket}.write(as.integer(#{RinRuby_Type_Double}),
+      #{RinRuby_Socket}.write(con,
+          as.integer(#{RinRuby_Type_Double}),
           as.integer(length(var)),
           var)
     } else if ( is.integer(var) ) {
-      #{RinRuby_Socket}.write(as.integer(#{RinRuby_Type_Integer}),
+      #{RinRuby_Socket}.write(con, 
+          as.integer(#{RinRuby_Type_Integer}),
           as.integer(length(var)),
           var)
     } else if ( is.character(var) && ( length(var) == 1 ) ) {
-      #{RinRuby_Socket}.write(as.integer(#{RinRuby_Type_String}),
-         as.integer(nchar(var)),
-         var)
+      #{RinRuby_Socket}.write(con, 
+          as.integer(#{RinRuby_Type_String}),
+          as.integer(nchar(var)),
+          var)
     } else if ( is.character(var) && ( length(var) > 1 ) ) {
-      #{RinRuby_Socket}.write(as.integer(#{RinRuby_Type_String_Array}),
+      #{RinRuby_Socket}.write(con, 
+          as.integer(#{RinRuby_Type_String_Array}),
           as.integer(length(var)))
     } else {
-      #{RinRuby_Socket}.write(as.integer(#{RinRuby_Type_Unknown}))
+      #{RinRuby_Socket}.write(con, as.integer(#{RinRuby_Type_Unknown}))
     }
   }
+  close(con)
 }
     EOF
 
@@ -613,6 +608,14 @@ def initialize(*args)
     else
       y.collect { |x| ( x > RinRuby_Half_Max_Unsigned_Integer ) ? -(RinRuby_Max_Unsigned_Integer-x) : ( x == RinRuby_NA_R_Integer ? nil : x ) }
     end
+  end
+  
+  def wait_connection(&b)
+    socket = nil
+    t = Thread::new{socket = @server_socket.accept}
+    b.call
+    t.join
+    socket
   end
 
   def assign_engine(name, value)
@@ -668,25 +671,32 @@ def initialize(*args)
     else
       raise "Unsupported data type on Ruby's end"
     end
-    @writer.puts "#{name} <- rinruby_get_value()"
+    
+    socket = wait_connection{
+      @writer.puts "#{name} <- rinruby_get_value()"
+    }
 
-    @socket.write([type,length].pack('NN'))
+    socket.write([type,length].pack('NN'))
     if ( type == RinRuby_Type_String )
-      @socket.write(value)
-      @socket.write([0].pack('C'))   # zero-terminated strings
+      socket.write(value)
+      socket.write([0].pack('C'))   # zero-terminated strings
     else
-      @socket.write(value.pack( ( type==RinRuby_Type_Double ? 'G' : 'N' )*length ))
+      socket.write(value.pack( ( type==RinRuby_Type_Double ? 'G' : 'N' )*length ))
     end
+    socket.close
+    
     original_value
   end
 
   def pull_engine(string)
-    @writer.puts <<-EOF
-      rinruby_pull(try(#{string}))
-    EOF
+    socket = wait_connection{
+      @writer.puts <<-EOF
+        rinruby_pull(try(#{string}))
+      EOF
+    }
 
     buffer = ""
-    @socket.read(4,buffer)
+    socket.read(4,buffer)
     type = to_signed_int(buffer.unpack('N')[0].to_i)
     if ( type == RinRuby_Type_Unknown )
       raise "Unsupported data type on R's end"
@@ -694,19 +704,19 @@ def initialize(*args)
     if ( type == RinRuby_Type_NotFound )
       return nil
     end
-    @socket.read(4,buffer)
+    socket.read(4,buffer)
     length = to_signed_int(buffer.unpack('N')[0].to_i)
 
     if ( type == RinRuby_Type_Double )
-      @socket.read(8*length,buffer)
+      socket.read(8*length,buffer)
       result = buffer.unpack('G'*length)
     elsif ( type == RinRuby_Type_Integer )
-      @socket.read(4*length,buffer)
+      socket.read(4*length,buffer)
       result = to_signed_int(buffer.unpack('N'*length))
     elsif ( type == RinRuby_Type_String )
-      @socket.read(length,buffer)
+      socket.read(length,buffer)
       result = buffer.dup
-      @socket.read(1,buffer)    # zero-terminated string
+      socket.read(1,buffer)    # zero-terminated string
       result
     elsif ( type == RinRuby_Type_String_Array )
       result = Array.new(length,'')
@@ -715,7 +725,7 @@ def initialize(*args)
       end
     elsif (type == RinRuby_Type_Matrix)
       rows=length
-      @socket.read(4,buffer)
+      socket.read(4,buffer)
       cols = to_signed_int(buffer.unpack('N')[0].to_i)
       elements=pull "as.vector(#{string})"
       index=0
@@ -728,15 +738,21 @@ def initialize(*args)
     else
       raise "Unsupported data type on Ruby's end"
     end
+    socket.close
     result
   end
 
   def complete?(string)
     assign_engine(RinRuby_Parse_String, string)
-    @writer.puts "rinruby_parseable(#{RinRuby_Parse_String})"
+    socket = wait_connection{
+      @writer.puts "rinruby_parseable(#{RinRuby_Parse_String})"
+    }
+    
     buffer=""
-    @socket.read(4,buffer)
+    socket.read(4,buffer)
     @writer.puts "rm(#{RinRuby_Parse_String})"
+    socket.close
+    
     result = to_signed_int(buffer.unpack('N')[0].to_i)
     return result==-1 ? false : true
 
