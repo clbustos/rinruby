@@ -164,18 +164,7 @@ def initialize(*args)
     @reader = @engine
     @writer = @engine
     raise "Engine closed" if @engine.closed?
-    @writer.puts <<-EOF
-      #{RinRuby_KeepTrying_Variable} <- TRUE
-      while ( #{RinRuby_KeepTrying_Variable} ) {
-        #{RinRuby_Socket} <- try(suppressWarnings(socketConnection("#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")),TRUE)
-        if ( inherits(#{RinRuby_Socket},"try-error") ) {
-          Sys.sleep(0.1)
-        } else {
-          #{RinRuby_KeepTrying_Variable} <- FALSE
-        }
-      }
-      rm(#{RinRuby_KeepTrying_Variable})
-    EOF
+    r_rinruby_com_open
     r_rinruby_get_value
     r_rinruby_pull
     r_rinruby_parseable
@@ -527,15 +516,37 @@ def initialize(*args)
   RinRuby_Min_R_Integer = -2**31+1
   #:startdoc:
 
-
+  def r_rinruby_com_open
+    @writer.puts <<-EOF
+      #{RinRuby_KeepTrying_Variable} <- TRUE
+      while ( #{RinRuby_KeepTrying_Variable} ) {
+        #{RinRuby_Socket} <- try(suppressWarnings(socketConnection("#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")),TRUE)
+        if ( inherits(#{RinRuby_Socket},"try-error") ) {
+          Sys.sleep(0.1)
+        } else {
+          #{RinRuby_KeepTrying_Variable} <- FALSE
+        }
+      }
+      rm(#{RinRuby_KeepTrying_Variable})
+        
+      #{RinRuby_Socket}.write <- function(v, ...){
+        invisible(lapply(list(v, ...), function(v2){
+            writeBin(v2, #{RinRuby_Socket}, endian="big")}))
+      }
+      #{RinRuby_Socket}.read <- function(vtype, len){
+        invisible(readBin(#{RinRuby_Socket}, vtype(), len, endian="big"))
+      }
+    EOF
+  end
+  
   def r_rinruby_parseable
     @writer.puts <<-EOF
     rinruby_parseable<-function(var) {
       result=try(parse(text=var),TRUE)
       if(inherits(result, "try-error")) {
-        writeBin(as.integer(-1),#{RinRuby_Socket}, endian="big")
+        #{RinRuby_Socket}.write(as.integer(-1))
       } else {
-        writeBin(as.integer(1),#{RinRuby_Socket}, endian="big")
+        #{RinRuby_Socket}.write(as.integer(1))
       }
     }
     EOF
@@ -545,14 +556,14 @@ def initialize(*args)
     @writer.puts <<-EOF
     rinruby_get_value <-function() {
       value <- NULL
-      type <- readBin(#{RinRuby_Socket}, integer(), 1, endian="big")
-      length <- readBin(#{RinRuby_Socket},integer(),1,endian="big")
+      type <- #{RinRuby_Socket}.read(integer, 1)
+      length <- #{RinRuby_Socket}.read(integer, 1)
       if ( type == #{RinRuby_Type_Double} ) {
-        value <- readBin(#{RinRuby_Socket},numeric(), length,endian="big")
+        value <- #{RinRuby_Socket}.read(numeric, length)
         } else if ( type == #{RinRuby_Type_Integer} ) {
-        value <- readBin(#{RinRuby_Socket},integer(), length, endian="big")
+        value <- #{RinRuby_Socket}.read(integer, length)
         } else if ( type == #{RinRuby_Type_String} ) {
-        value <- readBin(#{RinRuby_Socket},character(),1,endian="big")
+        value <- #{RinRuby_Socket}.read(character, 1)
         } else {
           value <-NULL
         }
@@ -566,30 +577,29 @@ def initialize(*args)
  rinruby_pull <-function(var)
 {
   if ( inherits(var ,"try-error") ) {
-     writeBin(as.integer(#{RinRuby_Type_NotFound}),#{RinRuby_Socket},endian="big")
+    #{RinRuby_Socket}.write(as.integer(#{RinRuby_Type_NotFound}))
   } else {
     if (is.matrix(var)) {
-      writeBin(as.integer(#{RinRuby_Type_Matrix}),#{RinRuby_Socket},endian="big")
-      writeBin(as.integer(dim(var)[1]),#{RinRuby_Socket},endian="big")
-      writeBin(as.integer(dim(var)[2]),#{RinRuby_Socket},endian="big")
-
+      #{RinRuby_Socket}.write(as.integer(#{RinRuby_Type_Matrix}),
+          as.integer(dim(var)[1]),
+          as.integer(dim(var)[2]))
     }  else if ( is.double(var) ) {
-      writeBin(as.integer(#{RinRuby_Type_Double}),#{RinRuby_Socket},endian="big")
-      writeBin(as.integer(length(var)),#{RinRuby_Socket},endian="big")
-      writeBin(var,#{RinRuby_Socket},endian="big")
+      #{RinRuby_Socket}.write(as.integer(#{RinRuby_Type_Double}),
+          as.integer(length(var)),
+          var)
     } else if ( is.integer(var) ) {
-      writeBin(as.integer(#{RinRuby_Type_Integer}),#{RinRuby_Socket},endian="big")
-      writeBin(as.integer(length(var)),#{RinRuby_Socket},endian="big")
-      writeBin(var,#{RinRuby_Socket},endian="big")
+      #{RinRuby_Socket}.write(as.integer(#{RinRuby_Type_Integer}),
+          as.integer(length(var)),
+          var)
     } else if ( is.character(var) && ( length(var) == 1 ) ) {
-      writeBin(as.integer(#{RinRuby_Type_String}),#{RinRuby_Socket},endian="big")
-      writeBin(as.integer(nchar(var)),#{RinRuby_Socket},endian="big")
-      writeBin(var,#{RinRuby_Socket},endian="big")
+      #{RinRuby_Socket}.write(as.integer(#{RinRuby_Type_String}),
+         as.integer(nchar(var)),
+         var)
     } else if ( is.character(var) && ( length(var) > 1 ) ) {
-      writeBin(as.integer(#{RinRuby_Type_String_Array}),#{RinRuby_Socket},endian="big")
-      writeBin(as.integer(length(var)),#{RinRuby_Socket},endian="big")
+      #{RinRuby_Socket}.write(as.integer(#{RinRuby_Type_String_Array}),
+          as.integer(length(var)))
     } else {
-      writeBin(as.integer(#{RinRuby_Type_Unknown}),#{RinRuby_Socket},endian="big")
+      #{RinRuby_Socket}.write(as.integer(#{RinRuby_Type_Unknown}))
     }
   }
 }
