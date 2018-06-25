@@ -513,19 +513,19 @@ def initialize(*args)
 
   def r_rinruby_socket_io
     @writer.puts <<-EOF
-      #{RinRuby_Socket}.write <- function(con, v, ...){
+      assign("#{RinRuby_Socket}.write", function(con, v, ...){
         invisible(lapply(list(v, ...), function(v2){
             writeBin(v2, con, endian="big")}))
-      }
-      #{RinRuby_Socket}.read <- function(con, vtype, len){
+      }, baseenv())
+      assign("#{RinRuby_Socket}.read", function(con, vtype, len){
         invisible(readBin(con, vtype(), len, endian="big"))
-      }
+      }, baseenv())
     EOF
   end
   
   def r_rinruby_parseable
     @writer.puts <<-EOF
-    rinruby_parseable<-function(var) {
+    assign("rinruby_parseable", function(var) {
       con <- socketConnection("#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")
       result=try(parse(text=var),TRUE)
       if(inherits(result, "try-error")) {
@@ -534,13 +534,13 @@ def initialize(*args)
         #{RinRuby_Socket}.write(con, as.integer(1))
       }
       close(con)
-    }
+    }, baseenv())
     EOF
   end
   # Create function on ruby to get values
   def r_rinruby_get_value
     @writer.puts <<-EOF
-    rinruby_get_value <-function() {
+    assign("rinruby_get_value", function() {
       con <- socketConnection("#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")
       value <- NULL
       type <- #{RinRuby_Socket}.read(con, integer, 1)
@@ -556,14 +556,13 @@ def initialize(*args)
       }
       close(con)
       value
-    }
+    }, baseenv())
     EOF
   end
 
   def r_rinruby_pull
     @writer.puts <<-EOF
-    rinruby_pull <-function(var)
-{
+assign("rinruby_pull", function(var){
   con <- socketConnection("#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")
   if ( inherits(var ,"try-error") ) {
     #{RinRuby_Socket}.write(con, as.integer(#{RinRuby_Type_NotFound}))
@@ -597,7 +596,7 @@ def initialize(*args)
     }
   }
   close(con)
-}
+}, baseenv())
     EOF
 
 
