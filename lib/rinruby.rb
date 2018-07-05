@@ -168,6 +168,7 @@ def initialize(*args)
       #{RinRuby_KeepTrying_Variable} <- TRUE
       while ( #{RinRuby_KeepTrying_Variable} ) {
         #{RinRuby_Socket} <- try(suppressWarnings(socketConnection("#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")),TRUE)
+        setTCPNoDelay(#{RinRuby_Socket}, value=TRUE)
         if ( inherits(#{RinRuby_Socket},"try-error") ) {
           Sys.sleep(0.1)
         } else {
@@ -180,6 +181,7 @@ def initialize(*args)
     r_rinruby_pull
     r_rinruby_parseable
     @socket = @server_socket.accept
+    @socket.setsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY, 1)
     echo(nil,true) if @platform =~ /.*-java/      # Redirect error messages on the Java platform
   end
 
