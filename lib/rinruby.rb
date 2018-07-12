@@ -513,6 +513,12 @@ def initialize(*args)
 
   def r_rinruby_socket_io
     @writer.puts <<-EOF
+      assign("#{RinRuby_Socket}.session", function(f){
+        con <- socketConnection("#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")
+        res <- f(con)
+        close(con)
+        invisible(res)
+      }, baseenv())
       assign("#{RinRuby_Socket}.write", function(con, v, ...){
         invisible(lapply(list(v, ...), function(v2){
             writeBin(v2, con, endian="big")}))
@@ -526,14 +532,14 @@ def initialize(*args)
   def r_rinruby_parseable
     @writer.puts <<-EOF
     assign("rinruby_parseable", function(var) {
-      con <- socketConnection("#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")
-      result=try(parse(text=var),TRUE)
-      if(inherits(result, "try-error")) {
-        #{RinRuby_Socket}.write(con, as.integer(-1))
-      } else {
-        #{RinRuby_Socket}.write(con, as.integer(1))
-      }
-      close(con)
+      #{RinRuby_Socket}.session(function(con){
+        result=try(parse(text=var),TRUE)
+        if(inherits(result, "try-error")) {
+          #{RinRuby_Socket}.write(con, as.integer(-1))
+        } else {
+          #{RinRuby_Socket}.write(con, as.integer(1))
+        }
+      })
     }, baseenv())
     EOF
   end
@@ -541,21 +547,21 @@ def initialize(*args)
   def r_rinruby_get_value
     @writer.puts <<-EOF
     assign("rinruby_get_value", function() {
-      con <- socketConnection("#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")
-      value <- NULL
-      type <- #{RinRuby_Socket}.read(con, integer, 1)
-      length <- #{RinRuby_Socket}.read(con, integer, 1)
-      if ( type == #{RinRuby_Type_Double} ) {
-        value <- #{RinRuby_Socket}.read(con, numeric, length)
-      } else if ( type == #{RinRuby_Type_Integer} ) {
-        value <- #{RinRuby_Socket}.read(con, integer, length)
-      } else if ( type == #{RinRuby_Type_String} ) {
-        value <- #{RinRuby_Socket}.read(con, character, 1)
-      } else {
+      #{RinRuby_Socket}.session(function(con){
+        value <- NULL
+        type <- #{RinRuby_Socket}.read(con, integer, 1)
+        length <- #{RinRuby_Socket}.read(con, integer, 1)
+        if ( type == #{RinRuby_Type_Double} ) {
+          value <- #{RinRuby_Socket}.read(con, numeric, length)
+        } else if ( type == #{RinRuby_Type_Integer} ) {
+          value <- #{RinRuby_Socket}.read(con, integer, length)
+        } else if ( type == #{RinRuby_Type_String} ) {
+          value <- #{RinRuby_Socket}.read(con, character, 1)
+        } else {
           value <-NULL
-      }
-      close(con)
-      value
+        }
+        value
+      })
     }, baseenv())
     EOF
   end
@@ -563,39 +569,39 @@ def initialize(*args)
   def r_rinruby_pull
     @writer.puts <<-EOF
 assign("rinruby_pull", function(var){
-  con <- socketConnection("#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")
-  if ( inherits(var ,"try-error") ) {
-    #{RinRuby_Socket}.write(con, as.integer(#{RinRuby_Type_NotFound}))
-  } else {
-    if (is.matrix(var)) {
-      #{RinRuby_Socket}.write(con,
-          as.integer(#{RinRuby_Type_Matrix}),
-          as.integer(dim(var)[1]),
-          as.integer(dim(var)[2]))
-    }  else if ( is.double(var) ) {
-      #{RinRuby_Socket}.write(con,
-          as.integer(#{RinRuby_Type_Double}),
-          as.integer(length(var)),
-          var)
-    } else if ( is.integer(var) ) {
-      #{RinRuby_Socket}.write(con, 
-          as.integer(#{RinRuby_Type_Integer}),
-          as.integer(length(var)),
-          var)
-    } else if ( is.character(var) && ( length(var) == 1 ) ) {
-      #{RinRuby_Socket}.write(con, 
-          as.integer(#{RinRuby_Type_String}),
-          as.integer(nchar(var)),
-          var)
-    } else if ( is.character(var) && ( length(var) > 1 ) ) {
-      #{RinRuby_Socket}.write(con, 
-          as.integer(#{RinRuby_Type_String_Array}),
-          as.integer(length(var)))
+  #{RinRuby_Socket}.session(function(con){
+    if ( inherits(var ,"try-error") ) {
+      #{RinRuby_Socket}.write(con, as.integer(#{RinRuby_Type_NotFound}))
     } else {
-      #{RinRuby_Socket}.write(con, as.integer(#{RinRuby_Type_Unknown}))
+      if (is.matrix(var)) {
+        #{RinRuby_Socket}.write(con,
+            as.integer(#{RinRuby_Type_Matrix}),
+            as.integer(dim(var)[1]),
+            as.integer(dim(var)[2]))
+      }  else if ( is.double(var) ) {
+        #{RinRuby_Socket}.write(con,
+            as.integer(#{RinRuby_Type_Double}),
+            as.integer(length(var)),
+            var)
+      } else if ( is.integer(var) ) {
+        #{RinRuby_Socket}.write(con, 
+            as.integer(#{RinRuby_Type_Integer}),
+            as.integer(length(var)),
+            var)
+      } else if ( is.character(var) && ( length(var) == 1 ) ) {
+        #{RinRuby_Socket}.write(con, 
+            as.integer(#{RinRuby_Type_String}),
+            as.integer(nchar(var)),
+            var)
+      } else if ( is.character(var) && ( length(var) > 1 ) ) {
+        #{RinRuby_Socket}.write(con, 
+            as.integer(#{RinRuby_Type_String_Array}),
+            as.integer(length(var)))
+      } else {
+        #{RinRuby_Socket}.write(con, as.integer(#{RinRuby_Type_Unknown}))
+      }
     }
-  }
-  close(con)
+  })
 }, baseenv())
     EOF
 
