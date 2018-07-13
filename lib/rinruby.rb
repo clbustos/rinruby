@@ -71,7 +71,8 @@ class RinRuby
   # Parse error
   ParseError=Class.new(Exception)
 
-
+  RinRuby_Env = ".RinRuby"  
+  
 #RinRuby is invoked within a Ruby script (or the interactive "irb" prompt denoted >>) using:
 #
 #      >> require "rinruby"
@@ -164,6 +165,9 @@ def initialize(*args)
     @reader = @engine
     @writer = @engine
     raise "Engine closed" if @engine.closed?
+    @writer.puts <<-EOF
+      assign("#{RinRuby_Env}", new.env(), baseenv())
+    EOF
     r_rinruby_socket_io
     r_rinruby_get_value
     r_rinruby_pull
@@ -496,14 +500,13 @@ def initialize(*args)
   RinRuby_Type_String_Array = 3
   RinRuby_Type_Matrix = 4
 
-  RinRuby_Length_Variable = ".RINRUBY.PULL.LENGTH.VARIABLE"
-  RinRuby_Type_Variable = ".RINRUBY.PULL.TYPE.VARIABLE"
-  RinRuby_Socket = ".RINRUBY.PULL.SOCKET"
-  RinRuby_Variable = ".RINRUBY.PULL.VARIABLE"
-  RinRuby_Parse_String = ".RINRUBY.PARSE.STRING"
+  RinRuby_Socket = "#{RinRuby_Env}$socket"
+  RinRuby_Parse_String = "#{RinRuby_Env}$parse.string"
+  
   RinRuby_Eval_Flag = "RINRUBY.EVAL.FLAG"
   RinRuby_Stderr_Flag = "RINRUBY.STDERR.FLAG"
   RinRuby_Exit_Flag = "RINRUBY.EXIT.FLAG"
+  
   RinRuby_Max_Unsigned_Integer = 2**32
   RinRuby_Half_Max_Unsigned_Integer = 2**31
   RinRuby_NA_R_Integer = 2**31
@@ -513,96 +516,96 @@ def initialize(*args)
 
   def r_rinruby_socket_io
     @writer.puts <<-EOF
-      assign("#{RinRuby_Socket}.session", function(f){
+      #{RinRuby_Env}$session <- function(f){
         con <- socketConnection("#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")
         res <- f(con)
         close(con)
         invisible(res)
-      }, baseenv())
-      assign("#{RinRuby_Socket}.write", function(con, v, ...){
+      }
+      #{RinRuby_Env}$write <- function(con, v, ...){
         invisible(lapply(list(v, ...), function(v2){
             writeBin(v2, con, endian="big")}))
-      }, baseenv())
-      assign("#{RinRuby_Socket}.read", function(con, vtype, len){
+      }
+      #{RinRuby_Env}$read <- function(con, vtype, len){
         invisible(readBin(con, vtype(), len, endian="big"))
-      }, baseenv())
+      }
     EOF
   end
   
   def r_rinruby_parseable
     @writer.puts <<-EOF
-    assign("rinruby_parseable", function(var) {
-      #{RinRuby_Socket}.session(function(con){
+    #{RinRuby_Env}$parseable <- function(var) {
+      #{RinRuby_Env}$session(function(con){
         result=try(parse(text=var),TRUE)
         if(inherits(result, "try-error")) {
-          #{RinRuby_Socket}.write(con, as.integer(-1))
+          #{RinRuby_Env}$write(con, as.integer(-1))
         } else {
-          #{RinRuby_Socket}.write(con, as.integer(1))
+          #{RinRuby_Env}$write(con, as.integer(1))
         }
       })
-    }, baseenv())
+    }
     EOF
   end
   # Create function on ruby to get values
   def r_rinruby_get_value
     @writer.puts <<-EOF
-    assign("rinruby_get_value", function() {
-      #{RinRuby_Socket}.session(function(con){
+    #{RinRuby_Env}$get_value <- function() {
+      #{RinRuby_Env}$session(function(con){
         value <- NULL
-        type <- #{RinRuby_Socket}.read(con, integer, 1)
-        length <- #{RinRuby_Socket}.read(con, integer, 1)
+        type <- #{RinRuby_Env}$read(con, integer, 1)
+        length <- #{RinRuby_Env}$read(con, integer, 1)
         if ( type == #{RinRuby_Type_Double} ) {
-          value <- #{RinRuby_Socket}.read(con, numeric, length)
+          value <- #{RinRuby_Env}$read(con, numeric, length)
         } else if ( type == #{RinRuby_Type_Integer} ) {
-          value <- #{RinRuby_Socket}.read(con, integer, length)
+          value <- #{RinRuby_Env}$read(con, integer, length)
         } else if ( type == #{RinRuby_Type_String} ) {
-          value <- #{RinRuby_Socket}.read(con, character, 1)
+          value <- #{RinRuby_Env}$read(con, character, 1)
         } else {
           value <-NULL
         }
         value
       })
-    }, baseenv())
+    }
     EOF
   end
 
   def r_rinruby_pull
     @writer.puts <<-EOF
-assign("rinruby_pull", function(var){
-  #{RinRuby_Socket}.session(function(con){
+#{RinRuby_Env}$pull <- function(var){
+  #{RinRuby_Env}$session(function(con){
     if ( inherits(var ,"try-error") ) {
-      #{RinRuby_Socket}.write(con, as.integer(#{RinRuby_Type_NotFound}))
+      #{RinRuby_Env}$write(con, as.integer(#{RinRuby_Type_NotFound}))
     } else {
       if (is.matrix(var)) {
-        #{RinRuby_Socket}.write(con,
+        #{RinRuby_Env}$write(con,
             as.integer(#{RinRuby_Type_Matrix}),
             as.integer(dim(var)[1]),
             as.integer(dim(var)[2]))
       }  else if ( is.double(var) ) {
-        #{RinRuby_Socket}.write(con,
+        #{RinRuby_Env}$write(con,
             as.integer(#{RinRuby_Type_Double}),
             as.integer(length(var)),
             var)
       } else if ( is.integer(var) ) {
-        #{RinRuby_Socket}.write(con, 
+        #{RinRuby_Env}$write(con, 
             as.integer(#{RinRuby_Type_Integer}),
             as.integer(length(var)),
             var)
       } else if ( is.character(var) && ( length(var) == 1 ) ) {
-        #{RinRuby_Socket}.write(con, 
+        #{RinRuby_Env}$write(con, 
             as.integer(#{RinRuby_Type_String}),
             as.integer(nchar(var)),
             var)
       } else if ( is.character(var) && ( length(var) > 1 ) ) {
-        #{RinRuby_Socket}.write(con, 
+        #{RinRuby_Env}$write(con, 
             as.integer(#{RinRuby_Type_String_Array}),
             as.integer(length(var)))
       } else {
-        #{RinRuby_Socket}.write(con, as.integer(#{RinRuby_Type_Unknown}))
+        #{RinRuby_Env}$write(con, as.integer(#{RinRuby_Type_Unknown}))
       }
     }
   })
-}, baseenv())
+}
     EOF
 
 
@@ -678,7 +681,7 @@ assign("rinruby_pull", function(var){
     end
     
     socket = wait_connection{
-      @writer.puts "#{name} <- rinruby_get_value()"
+      @writer.puts "#{name} <- #{RinRuby_Env}$get_value()"
     }
 
     socket.write([type,length].pack('NN'))
@@ -696,7 +699,7 @@ assign("rinruby_pull", function(var){
   def pull_engine(string)
     socket = wait_connection{
       @writer.puts <<-EOF
-        rinruby_pull(try(#{string}))
+        #{RinRuby_Env}$pull(try(#{string}))
       EOF
     }
 
@@ -750,12 +753,11 @@ assign("rinruby_pull", function(var){
   def complete?(string)
     assign_engine(RinRuby_Parse_String, string)
     socket = wait_connection{
-      @writer.puts "rinruby_parseable(#{RinRuby_Parse_String})"
+      @writer.puts "#{RinRuby_Env}$parseable(#{RinRuby_Parse_String})"
     }
     
     buffer=""
     socket.read(4,buffer)
-    @writer.puts "rm(#{RinRuby_Parse_String})"
     socket.close
     
     result = to_signed_int(buffer.unpack('N')[0].to_i)
@@ -776,7 +778,6 @@ assign("rinruby_pull", function(var){
     raise ParseError, "Parse error" if ! complete?(string)
     assign_engine(RinRuby_Parse_String,string)
     result = pull_engine("as.integer(ifelse(inherits(try({eval(parse(text=paste(#{RinRuby_Parse_String},'<- 1')))}, silent=TRUE),'try-error'),1,0))")
-    @writer.puts "rm(#{RinRuby_Parse_String})"
     return true if result == [0]
     raise ParseError, "Parse error"
   end
