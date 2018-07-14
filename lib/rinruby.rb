@@ -618,12 +618,14 @@ def initialize(*args)
     end
   end
   
-  def wait_connection(&b)
+  def socket_session(r_exp, &b)
     socket = nil
     t = Thread::new{socket = @server_socket.accept}
-    b.call
+    @writer.puts r_exp
     t.join
-    socket
+    res = b.call(socket)
+    socket.close
+    res
   end
 
   def assign_engine(name, value)
@@ -680,87 +682,75 @@ def initialize(*args)
       raise "Unsupported data type on Ruby's end"
     end
     
-    socket = wait_connection{
-      @writer.puts "#{name} <- #{RinRuby_Env}$get_value()"
+    socket_session("#{name} <- #{RinRuby_Env}$get_value()"){|socket|
+      socket.write([type,length].pack('NN'))
+      if ( type == RinRuby_Type_String )
+        socket.write(value)
+        socket.write([0].pack('C'))   # zero-terminated strings
+      else
+        socket.write(value.pack( ( type==RinRuby_Type_Double ? 'G' : 'N' )*length ))
+      end
     }
-
-    socket.write([type,length].pack('NN'))
-    if ( type == RinRuby_Type_String )
-      socket.write(value)
-      socket.write([0].pack('C'))   # zero-terminated strings
-    else
-      socket.write(value.pack( ( type==RinRuby_Type_Double ? 'G' : 'N' )*length ))
-    end
-    socket.close
     
     original_value
   end
 
   def pull_engine(string)
-    socket = wait_connection{
-      @writer.puts <<-EOF
-        #{RinRuby_Env}$pull(try(#{string}))
-      EOF
-    }
-
-    buffer = ""
-    socket.read(4,buffer)
-    type = to_signed_int(buffer.unpack('N')[0].to_i)
-    if ( type == RinRuby_Type_Unknown )
-      raise "Unsupported data type on R's end"
-    end
-    if ( type == RinRuby_Type_NotFound )
-      return nil
-    end
-    socket.read(4,buffer)
-    length = to_signed_int(buffer.unpack('N')[0].to_i)
-
-    if ( type == RinRuby_Type_Double )
-      socket.read(8*length,buffer)
-      result = buffer.unpack('G'*length)
-    elsif ( type == RinRuby_Type_Integer )
-      socket.read(4*length,buffer)
-      result = to_signed_int(buffer.unpack('N'*length))
-    elsif ( type == RinRuby_Type_String )
-      socket.read(length,buffer)
-      result = buffer.dup
-      socket.read(1,buffer)    # zero-terminated string
-      result
-    elsif ( type == RinRuby_Type_String_Array )
-      result = Array.new(length,'')
-      for index in 0...length
-        result[index] = pull "#{string}[#{index+1}]"
-      end
-    elsif (type == RinRuby_Type_Matrix)
-      rows=length
+    socket_session("#{RinRuby_Env}$pull(try(#{string}))"){|socket|  
+      buffer = ""
       socket.read(4,buffer)
-      cols = to_signed_int(buffer.unpack('N')[0].to_i)
-      elements=pull "as.vector(#{string})"
-      index=0
-      result=Matrix.rows(rows.times.collect {|i|
-        cols.times.collect {|j|
-          elements[(j*rows)+i]
-        }
-      })
-      def result.length; 2;end
-    else
-      raise "Unsupported data type on Ruby's end"
-    end
-    socket.close
-    result
+      type = to_signed_int(buffer.unpack('N')[0].to_i)
+      if ( type == RinRuby_Type_Unknown )
+        raise "Unsupported data type on R's end"
+      end
+      if ( type == RinRuby_Type_NotFound )
+        return nil
+      end
+      socket.read(4,buffer)
+      length = to_signed_int(buffer.unpack('N')[0].to_i)
+  
+      if ( type == RinRuby_Type_Double )
+        socket.read(8*length,buffer)
+        result = buffer.unpack('G'*length)
+      elsif ( type == RinRuby_Type_Integer )
+        socket.read(4*length,buffer)
+        result = to_signed_int(buffer.unpack('N'*length))
+      elsif ( type == RinRuby_Type_String )
+        socket.read(length,buffer)
+        result = buffer.dup
+        socket.read(1,buffer)    # zero-terminated string
+        result
+      elsif ( type == RinRuby_Type_String_Array )
+        result = Array.new(length,'')
+        for index in 0...length
+          result[index] = pull "#{string}[#{index+1}]"
+        end
+      elsif (type == RinRuby_Type_Matrix)
+        rows=length
+        socket.read(4,buffer)
+        cols = to_signed_int(buffer.unpack('N')[0].to_i)
+        elements=pull "as.vector(#{string})"
+        index=0
+        result=Matrix.rows(rows.times.collect {|i|
+          cols.times.collect {|j|
+            elements[(j*rows)+i]
+          }
+        })
+        def result.length; 2;end
+      else
+        raise "Unsupported data type on Ruby's end"
+      end
+      result
+    }
   end
 
   def complete?(string)
     assign_engine(RinRuby_Parse_String, string)
-    socket = wait_connection{
-      @writer.puts "#{RinRuby_Env}$parseable(#{RinRuby_Parse_String})"
+    result = socket_session("#{RinRuby_Env}$parseable(#{RinRuby_Parse_String})"){|socket|
+      buffer=""
+      socket.read(4,buffer)
+      to_signed_int(buffer.unpack('N')[0].to_i)
     }
-    
-    buffer=""
-    socket.read(4,buffer)
-    socket.close
-    
-    result = to_signed_int(buffer.unpack('N')[0].to_i)
     return result==-1 ? false : true
 
 =begin
