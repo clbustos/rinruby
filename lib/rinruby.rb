@@ -621,6 +621,7 @@ def initialize(*args)
       @writer.puts <<-EOF
         #{RinRuby_Socket} <- socketConnection(
             "#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")
+        #{"on.exit(close(#{RinRuby_Socket}, add = T))" if @opts[:persistent]}
       EOF
       t.join
     end
