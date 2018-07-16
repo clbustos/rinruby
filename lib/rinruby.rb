@@ -452,11 +452,7 @@ def initialize(*args)
   def pull(string, singletons=false)
     raise EngineClosed if @engine.closed?
     if complete?(string)
-      result = pull_engine(string)
-      if ( ! singletons ) && ( result.length == 1 ) && ( result.class != String )
-        result = result[0]
-      end
-      result
+      pull_engine(string, singletons)
     else
       raise ParseError, "Parse error"
     end
@@ -701,7 +697,7 @@ def initialize(*args)
     original_value
   end
 
-  def pull_engine(string)
+  def pull_engine(string, singletons = true)
     pull_proc = proc{|var, socket|
       @writer.puts "#{RinRuby_Env}$pull(try(#{var}))"  
       buffer = ""
@@ -718,10 +714,12 @@ def initialize(*args)
   
       if ( type == RinRuby_Type_Double )
         socket.read(8*length,buffer)
-        result = buffer.unpack('G'*length)
+        result = buffer.unpack("G#{length}")
+        result = result[0] if (!singletons) && (length == 1)
       elsif ( type == RinRuby_Type_Integer )
         socket.read(4*length,buffer)
-        result = to_signed_int(buffer.unpack('N'*length))
+        result = to_signed_int(buffer.unpack("N#{length}"))
+        result = result[0] if (!singletons) && (length == 1)
       elsif ( type == RinRuby_Type_String )
         socket.read(length,buffer)
         result = buffer.dup
@@ -743,7 +741,6 @@ def initialize(*args)
             elements[(j*rows)+i]
           }
         })
-        def result.length; 2;end
       else
         raise "Unsupported data type on Ruby's end"
       end
