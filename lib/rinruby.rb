@@ -516,11 +516,9 @@ def initialize(*args)
 
   def r_rinruby_socket_io
     @writer.puts <<-EOF
+      #{RinRuby_Socket} <- NULL
       #{RinRuby_Env}$session <- function(f){
-        con <- socketConnection("#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")
-        res <- f(con)
-        close(con)
-        invisible(res)
+        invisible(f(#{RinRuby_Socket}))
       }
       #{RinRuby_Env}$write <- function(con, v, ...){
         invisible(lapply(list(v, ...), function(v2){
@@ -618,12 +616,19 @@ def initialize(*args)
     end
   end
   
-  def socket_session(r_exp, &b)
+  def socket_session(&b)
     socket = nil
     t = Thread::new{socket = @server_socket.accept}
-    @writer.puts r_exp
+    @writer.puts <<-EOF
+      #{RinRuby_Socket} <- socketConnection(
+          "#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")
+    EOF
     t.join
     res = b.call(socket)
+    @writer.puts <<-EOF
+      close(#{RinRuby_Socket})
+      #{RinRuby_Socket} <- NULL
+    EOF
     socket.close
     res
   end
@@ -682,7 +687,8 @@ def initialize(*args)
       raise "Unsupported data type on Ruby's end"
     end
     
-    socket_session("#{name} <- #{RinRuby_Env}$get_value()"){|socket|
+    socket_session{|socket|
+      @writer.puts "#{name} <- #{RinRuby_Env}$get_value()"
       socket.write([type,length].pack('NN'))
       if ( type == RinRuby_Type_String )
         socket.write(value)
@@ -696,7 +702,8 @@ def initialize(*args)
   end
 
   def pull_engine(string)
-    socket_session("#{RinRuby_Env}$pull(try(#{string}))"){|socket|  
+    pull_proc = proc{|var, socket|
+      @writer.puts "#{RinRuby_Env}$pull(try(#{var}))"  
       buffer = ""
       socket.read(4,buffer)
       type = to_signed_int(buffer.unpack('N')[0].to_i)
@@ -723,13 +730,13 @@ def initialize(*args)
       elsif ( type == RinRuby_Type_String_Array )
         result = Array.new(length,'')
         for index in 0...length
-          result[index] = pull "#{string}[#{index+1}]"
+          result[index] = pull_proc.call("#{var}[#{index+1}]", socket)
         end
       elsif (type == RinRuby_Type_Matrix)
         rows=length
         socket.read(4,buffer)
         cols = to_signed_int(buffer.unpack('N')[0].to_i)
-        elements=pull "as.vector(#{string})"
+        elements=pull_proc.call("as.vector(#{var})", socket)
         index=0
         result=Matrix.rows(rows.times.collect {|i|
           cols.times.collect {|j|
@@ -742,11 +749,15 @@ def initialize(*args)
       end
       result
     }
+    socket_session{|socket|
+      pull_proc.call(string, socket)
+    }
   end
 
   def complete?(string)
     assign_engine(RinRuby_Parse_String, string)
-    result = socket_session("#{RinRuby_Env}$parseable(#{RinRuby_Parse_String})"){|socket|
+    result = socket_session{|socket|
+      @writer.puts "#{RinRuby_Env}$parseable(#{RinRuby_Parse_String})"
       buffer=""
       socket.read(4,buffer)
       to_signed_int(buffer.unpack('N')[0].to_i)
