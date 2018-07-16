@@ -114,7 +114,7 @@ def initialize(*args)
     opts[:port_number]=args.shift unless args.size==0
     opts[:port_width]=args.shift unless args.size==0
   end
-  default_opts= {:echo=>true, :interactive=>true, :executable=>nil, :port_number=>38442, :port_width=>1000, :hostname=>'127.0.0.1'}
+  default_opts= {:echo=>true, :interactive=>true, :executable=>nil, :port_number=>38442, :port_width=>1000, :hostname=>'127.0.0.1', :persistent => true}
 
     @opts=default_opts.merge(opts)
     @port_width=@opts[:port_width]
@@ -168,6 +168,7 @@ def initialize(*args)
     @writer.puts <<-EOF
       assign("#{RinRuby_Env}", new.env(), baseenv())
     EOF
+    @socket = nil
     r_rinruby_socket_io
     r_rinruby_get_value
     r_rinruby_pull
@@ -613,19 +614,26 @@ def initialize(*args)
   end
   
   def socket_session(&b)
-    socket = nil
-    t = Thread::new{socket = @server_socket.accept}
-    @writer.puts <<-EOF
-      #{RinRuby_Socket} <- socketConnection(
-          "#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")
-    EOF
-    t.join
+    socket = @socket
+    # TODO check still available connection?
+    unless socket then
+      t = Thread::new{socket = @server_socket.accept}
+      @writer.puts <<-EOF
+        #{RinRuby_Socket} <- socketConnection(
+            "#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")
+      EOF
+      t.join
+    end
     res = b.call(socket)
-    @writer.puts <<-EOF
-      close(#{RinRuby_Socket})
-      #{RinRuby_Socket} <- NULL
-    EOF
-    socket.close
+    if @opts[:persistent]
+      @socket = socket
+    else
+      @writer.puts <<-EOF
+        close(#{RinRuby_Socket})
+        #{RinRuby_Socket} <- NULL
+      EOF
+      socket.close
+    end
     res
   end
 
