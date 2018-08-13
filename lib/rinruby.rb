@@ -554,7 +554,10 @@ def initialize(*args)
         } else if ( type == #{RinRuby_Type_Integer} ) {
           value <- #{RinRuby_Env}$read(con, integer, length)
         } else if ( type == #{RinRuby_Type_String} ) {
-          value <- #{RinRuby_Env}$read(con, character, 1)
+          value <- character(length)
+          for(i in 1:length){
+            value[i] <- #{RinRuby_Env}$read(con, character, 1)
+          }
         } else {
           value <-NULL
         }
@@ -649,6 +652,7 @@ def initialize(*args)
 
     if value.kind_of?(String)
       type = RinRuby_Type_String
+      value = [value]
       length = 1
     elsif value.kind_of?(Integer)
       if ( value >= RinRuby_Min_R_Integer ) && ( value <= RinRuby_Max_R_Integer )
@@ -666,11 +670,8 @@ def initialize(*args)
     elsif value.kind_of?(Array)
       begin
         if value.any? { |x| x.kind_of?(String) }
-          eval "#{name} <- character(#{value.length})"
-          for index in 0...value.length
-            assign_engine("#{name}[#{index}+1]",value[index])
-          end
-          return original_value
+          type = RinRuby_Type_String
+          value = value.collect{|x| x.to_s}
         elsif value.any? { |x| x.kind_of?(Float) }
           type = RinRuby_Type_Double
           value = value.collect { |x| x.to_f }
@@ -696,8 +697,10 @@ def initialize(*args)
       @writer.puts "#{name} <- #{RinRuby_Env}$get_value()"
       socket.write([type,length].pack('NN'))
       if ( type == RinRuby_Type_String )
-        socket.write(value)
-        socket.write([0].pack('C'))   # zero-terminated strings
+        value.each{|v|
+          socket.write(v)
+          socket.write([0].pack('C'))   # zero-terminated strings
+        }
       else
         socket.write(value.pack( ( type==RinRuby_Type_Double ? 'G' : 'N' )*length ))
       end
