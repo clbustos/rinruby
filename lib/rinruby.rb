@@ -643,66 +643,42 @@ def initialize(*args)
 
   def assign_engine(name, value)
     original_value = value
-    # Special assign for matrixes
-    if value.kind_of?(::Matrix)
-      values=value.row_size.times.collect {|i| value.column_size.times.collect {|j| value[i,j]}}.flatten
-      eval "#{name}=matrix(c(#{values.join(',')}), #{value.row_size}, #{value.column_size}, TRUE)"
-      return original_value
-    end
-
-    if value.kind_of?(String)
-      type = RinRuby_Type_String
+    
+    r_exp = "#{name} <- #{RinRuby_Env}$get_value()"
+    
+    if value.kind_of?(::Matrix) # assignment for matrices
+      r_exp = "#{name} <- matrix(#{RinRuby_Env}$get_value(), nrow=#{value.row_size}, ncol=#{value.column_size}, byrow=T)"
+      value = value.row_vectors.collect{|row| row.to_a}.flatten
+    elsif !value.kind_of?(Array) then # check Array
       value = [value]
-      length = 1
-    elsif value.kind_of?(Integer)
-      if ( value >= RinRuby_Min_R_Integer ) && ( value <= RinRuby_Max_R_Integer )
-        value = [ value.to_i ]
-        type = RinRuby_Type_Integer
-      else
-        value = [ value.to_f ]
-        type = RinRuby_Type_Double
-      end
-      length = 1
-    elsif value.kind_of?(Float)
-      value = [ value.to_f ]
-      type = RinRuby_Type_Double
-      length = 1
-    elsif value.kind_of?(Array)
+    end
+    
+    type = (if value.any?{|x| x.kind_of?(String)}
+      value = value.collect{|v| v.to_s}
+      RinRuby_Type_String
+    elsif value.all?{|x|
+          x.kind_of?(Integer) && (x >= RinRuby_Min_R_Integer) && (x <= RinRuby_Max_R_Integer)
+        }
+      RinRuby_Type_Integer
+    else
       begin
-        if value.any? { |x| x.kind_of?(String) }
-          type = RinRuby_Type_String
-          value = value.collect{|x| x.to_s}
-        elsif value.any? { |x| x.kind_of?(Float) }
-          type = RinRuby_Type_Double
-          value = value.collect { |x| x.to_f }
-        elsif value.all? { |x| x.kind_of?(Integer) }
-          if value.all? { |x| ( x >= RinRuby_Min_R_Integer ) && ( x <= RinRuby_Max_R_Integer ) }
-            type = RinRuby_Type_Integer
-          else
-            value = value.collect { |x| x.to_f }
-            type = RinRuby_Type_Double
-          end
-        else
-          raise "Unsupported data type on Ruby's end"
-        end
+        value = value.collect{|x| Float(x)}
       rescue
         raise "Unsupported data type on Ruby's end"
       end
-      length = value.length
-    else
-      raise "Unsupported data type on Ruby's end"
-    end
+      RinRuby_Type_Double
+    end)
     
     socket_session{|socket|
-      @writer.puts "#{name} <- #{RinRuby_Env}$get_value()"
-      socket.write([type,length].pack('NN'))
-      if ( type == RinRuby_Type_String )
+      @writer.puts(r_exp)
+      socket.write([type, value.size].pack('NN'))
+      if type == RinRuby_Type_String
         value.each{|v|
           socket.write(v)
-          socket.write([0].pack('C'))   # zero-terminated strings
+          socket.write([0].pack('C')) # zero-terminated strings
         }
       else
-        socket.write(value.pack( ( type==RinRuby_Type_Double ? 'G' : 'N' )*length ))
+        socket.write(value.pack("#{(type == RinRuby_Type_Double) ? 'G' : 'N'}#{value.size}"))
       end
     }
     
