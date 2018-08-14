@@ -121,7 +121,7 @@ describe RinRuby do
     end
 
     it "should push a Matrix" do
-      matrix=Matrix[[rand,rand,rand],[rand,rand,rand]]
+      matrix=Matrix::build(100, 200){|i, j| rand} # 100 x 200 matrix
       lambda {R.assign('x',matrix)}.should_not raise_error
       rx=R.x
       matrix.row_size.times {|i|
