@@ -577,9 +577,8 @@ def initialize(*args)
       if (is.matrix(var)) {
         #{RinRuby_Env}$write(con,
             as.integer(#{RinRuby_Type_Matrix}),
-            as.integer(dim(var)[1]),
-            as.integer(dim(var)[2]))
-      }  else if ( is.double(var) ) {
+            as.integer(dim(var)[1]))
+      } else if ( is.double(var) ) {
         #{RinRuby_Env}$write(con,
             as.integer(#{RinRuby_Type_Double}),
             as.integer(length(var)),
@@ -605,15 +604,13 @@ def initialize(*args)
   })
 }
     EOF
-
-
   end
-  def to_signed_int(y)
-    if y.kind_of?(Integer)
-      ( y > RinRuby_Half_Max_Unsigned_Integer ) ? -(RinRuby_Max_Unsigned_Integer-y) : ( y == RinRuby_NA_R_Integer ? nil : y )
-    else
-      y.collect { |x| ( x > RinRuby_Half_Max_Unsigned_Integer ) ? -(RinRuby_Max_Unsigned_Integer-x) : ( x == RinRuby_NA_R_Integer ? nil : x ) }
-    end
+  def to_signed_int(values)
+    values.collect{|v|
+      (v > RinRuby_Half_Max_Unsigned_Integer) \
+          ? -(RinRuby_Max_Unsigned_Integer - v) \
+          : (v == RinRuby_NA_R_Integer ? nil : v)
+    }
   end
   
   def socket_session(&b)
@@ -688,46 +685,32 @@ def initialize(*args)
   def pull_engine(string, singletons = true)
     pull_proc = proc{|var, socket|
       @writer.puts "#{RinRuby_Env}$pull(try(#{var}))"  
-      buffer = ""
-      socket.read(4,buffer)
-      type = to_signed_int(buffer.unpack('N')[0].to_i)
-      if ( type == RinRuby_Type_Unknown )
+      type = to_signed_int(socket.read(4).unpack('N')).first
+      case type
+      when RinRuby_Type_Unknown
         raise "Unsupported data type on R's end"
-      end
-      if ( type == RinRuby_Type_NotFound )
+      when RinRuby_Type_NotFound
         return nil
       end
-      socket.read(4,buffer)
-      length = to_signed_int(buffer.unpack('N')[0].to_i)
+      length = to_signed_int(socket.read(4).unpack('N')).first
   
       if ( type == RinRuby_Type_Double )
-        socket.read(8*length,buffer)
-        result = buffer.unpack("G#{length}")
+        result = socket.read(8 * length).unpack("G#{length}")
         result = result[0] if (!singletons) && (length == 1)
       elsif ( type == RinRuby_Type_Integer )
-        socket.read(4*length,buffer)
-        result = to_signed_int(buffer.unpack("N#{length}"))
+        result = to_signed_int(socket.read(4 * length).unpack("N#{length}"))
         result = result[0] if (!singletons) && (length == 1)
       elsif ( type == RinRuby_Type_String )
-        socket.read(length,buffer)
-        result = buffer.dup
-        socket.read(1,buffer)    # zero-terminated string
+        result = socket.read(length)
+        socket.read(1) # zero-terminated string
         result
       elsif ( type == RinRuby_Type_String_Array )
-        result = Array.new(length,'')
-        for index in 0...length
-          result[index] = pull_proc.call("#{var}[#{index+1}]", socket)
-        end
+        result = Array.new(length){|i|
+          pull_proc.call("#{var}[#{i+1}]", socket)
+        }
       elsif (type == RinRuby_Type_Matrix)
-        rows=length
-        socket.read(4,buffer)
-        cols = to_signed_int(buffer.unpack('N')[0].to_i)
-        elements=pull_proc.call("as.vector(#{var})", socket)
-        index=0
-        result=Matrix.rows(rows.times.collect {|i|
-          cols.times.collect {|j|
-            elements[(j*rows)+i]
-          }
+        result = Matrix.rows(length.times.collect{|i|
+          pull_proc.call("#{var}[#{i+1},]", socket)
         })
       else
         raise "Unsupported data type on Ruby's end"
@@ -743,9 +726,7 @@ def initialize(*args)
     assign_engine(RinRuby_Parse_String, string)
     result = socket_session{|socket|
       @writer.puts "#{RinRuby_Env}$parseable(#{RinRuby_Parse_String})"
-      buffer=""
-      socket.read(4,buffer)
-      to_signed_int(buffer.unpack('N')[0].to_i)
+      to_signed_int(socket.read(4).unpack('N')).first
     }
     return result==-1 ? false : true
 
