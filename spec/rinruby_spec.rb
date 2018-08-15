@@ -23,6 +23,11 @@ shared_examples 'RinRubyCore' do
         expect(r.executable).to eq("R")
       end      
     end
+    it "should accept :echo and :interactive parameters" do
+      params.merge!(:echo_enabled => true, :interactive => true)
+      expect(r.echo_enabled).to be_truthy
+      expect(r.interactive).to be_truthy
+    end
     it "should accept custom :port_number" do
       params.merge!(:port_number => 38442+rand(3), :port_width => 1)
       expect(r.port_number).to eq(params[:port_number])
@@ -35,9 +40,14 @@ shared_examples 'RinRubyCore' do
       }
     end
   end
+  
   describe "R interface" do
+    # In before(:each) or let(including subject) blocks, Assignment to instance variable 
+    # having a same name defined in before(:all) will not work intentionally, 
+    # because a new instance variable will be created for the following examples.
+    # For workaround, two-step indirect assignment to a hash created in before(:all) is applied. 
     before(:all){@cached_env = {:r => nil}} # make placeholder
-    subject{@cached_env[:r] ||= r}
+    subject{@cached_env[:r] ||= r} 
     describe "basic methods" do 
       it {is_expected.to respond_to(:eval)}
       it {is_expected.to respond_to(:assign)}
@@ -83,7 +93,7 @@ shared_examples 'RinRubyCore' do
       it "should raise an NoMethod error on getter with 1 or more parameters" do
         expect{subject.unknown_method(1) }.to raise_error(NoMethodError)
       end
-      
+
       it "should pull a String" do
         subject.eval("x<-'Value'")
         expect(subject.pull('x')).to eq('Value')
@@ -104,7 +114,7 @@ shared_examples 'RinRubyCore' do
         subject.eval("x<-c('a','b')")
         expect(subject.pull('x')).to eq(['a','b'])
       end
-  
+
       it "should push a Matrix" do
         matrix=Matrix::build(100, 200){|i, j| rand} # 100 x 200 matrix
         expect{subject.assign('x',matrix)}.not_to raise_error
@@ -117,6 +127,7 @@ shared_examples 'RinRubyCore' do
       end
     end
   end
+  
   context "on quit" do
     it "return true" do
       expect(r.quit).to be_truthy
