@@ -108,6 +108,10 @@ shared_examples 'RinRubyCore' do
         subject.eval("x<-1.5")
         expect(subject.pull('x')).to eq(1.5)
       end
+      it "should pull a Logical" do
+        subject.eval("x<-T")
+        expect(subject.pull('x')).to eq(true)
+      end
       it "should pull an Array of String" do
         subject.eval("x<-c('a','b')")
         expect(subject.pull('x')).to eq(['a','b'])
@@ -119,6 +123,10 @@ shared_examples 'RinRubyCore' do
       it "should pull an Array of Float" do
         subject.eval("x<-c(1.1,2.2,5,3)")
         expect(subject.pull('x')).to eq([1.1,2.2,5.0,3.0])
+      end
+      it "should pull an Array of Logical" do
+        subject.eval("x<-c(T, F)")
+        expect(subject.pull('x')).to eq([true, false])
       end
 
       it "should pull a Matrix" do
