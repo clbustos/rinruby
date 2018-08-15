@@ -3,19 +3,23 @@ require 'rinruby'
 puts "RinRuby #{RinRuby::VERSION} specification"
 
 describe RinRuby do
+  let(:params){
+    {
+      :echo_enabled => false, 
+      :interactive => false, 
+      :executable => nil, 
+      :port_number => 38500, 
+      :port_width => 1,
+    }
+  }
+  let(:r){
+    RinRuby.new(*([:echo_enabled, :interactive, :executable, :port_number, :port_width].collect{|k| params[k]}))
+  }
+  subject{R}
+  before do
+    subject.echo(false)
+  end
   describe "on init" do
-    let(:params){
-      {
-        :echo_enabled => false, 
-        :interactive => false, 
-        :executable => nil, 
-        :port_number => 38500, 
-        :port_width => 1,
-      }
-    }
-    let(:r){
-      RinRuby.new(*([:echo_enabled, :interactive, :executable, :port_number, :port_width].collect{|k| params[k]}))
-    }
     it "should accept parameters as specified on Dahl & Crawford(2009)" do
       expect(r.echo_enabled).to be_falsy
       expect(r.interactive).to be_falsy
@@ -40,11 +44,7 @@ describe RinRuby do
       }
     end
   end
-  before do
-    R.echo(false)
-  end
-  subject {R}
-  context "basic methods" do 
+  describe "basic methods" do 
     it {is_expected.to respond_to(:eval)}
     it {is_expected.to respond_to(:quit)}
     it {is_expected.to respond_to(:assign)}
@@ -52,81 +52,78 @@ describe RinRuby do
     it {is_expected.to respond_to(:quit)}
     it {is_expected.to respond_to(:echo)}
     it "return correct values for complete?" do
-      expect(R.eval("x<-1")).to be_truthy
+      expect(subject.eval("x<-1")).to be_truthy
     end
     it "return false for complete? for incorrect expressions" do
-      expect(R.complete?("x<-")).to be_falsy
+      expect(subject.complete?("x<-")).to be_falsy
     end
     it "correct eval should return true" do 
-      expect(R.complete?("x<-1")).to be_truthy
+      expect(subject.complete?("x<-1")).to be_truthy
     end
     it "incorrect eval should raise an ParseError" do
-      expect{R.eval("x<-")}.to raise_error(RinRuby::ParseError)
+      expect{subject.eval("x<-")}.to raise_error(RinRuby::ParseError)
     end
   end
-  context "on assing" do
+  context "on assign" do
     let(:x){rand} 
     it "should assign correctly" do
-      R.assign("x",x)
-      expect(R.pull("x")).to eq(x)
+      subject.assign("x",x)
+      expect(subject.pull("x")).to eq(x)
     end
     it "should be the same using assign than R#= methods" do
-      R.assign("x1",x)
-      R.x2=x
-      expect(R.pull("x1")).to eq(x)
-      expect(R.pull("x2")).to eq(x)
+      subject.assign("x1",x)
+      subject.x2=x
+      expect(subject.pull("x1")).to eq(x)
+      expect(subject.pull("x2")).to eq(x)
     end
     it "should raise an ArgumentError error on setter with 0 parameters" do
-      expect{R.unknown_method=() }.to raise_error(ArgumentError)
+      expect{subject.unknown_method=() }.to raise_error(ArgumentError)
     end
   end
   context "on pull" do
     it "should be the same using pull than R# methods" do
       x=rand
-      R.x=x
-      expect(R.pull("x")).to eq(x)
-      expect(R.x).to eq(x)
+      subject.x=x
+      expect(subject.pull("x")).to eq(x)
+      expect(subject.x).to eq(x)
     end
     it "should raise an NoMethod error on getter with 1 or more parameters" do
-      expect{R.unknown_method(1) }.to raise_error(NoMethodError)
+      expect{subject.unknown_method(1) }.to raise_error(NoMethodError)
     end
     
     it "should pull a String" do
-      R.eval("x<-'Value'")
-      expect(R.pull('x')).to eq('Value')
+      subject.eval("x<-'Value'")
+      expect(subject.pull('x')).to eq('Value')
     end
     it "should pull an Integer" do
-      R.eval("x<-1")
-      expect(R.pull('x')).to eq(1)
+      subject.eval("x<-1")
+      expect(subject.pull('x')).to eq(1)
     end
     it "should pull a Float" do
-      R.eval("x<-1.5")
-      expect(R.pull('x')).to eq(1.5)
+      subject.eval("x<-1.5")
+      expect(subject.pull('x')).to eq(1.5)
     end
     it "should pull an Array of Numeric" do
-      R.eval("x<-c(1,2.5,3)")
-      expect(R.pull('x')).to eq([1,2.5,3])
+      subject.eval("x<-c(1,2.5,3)")
+      expect(subject.pull('x')).to eq([1,2.5,3])
     end
     it "should pull an Array of strings" do
-      R.eval("x<-c('a','b')")
-      expect(R.pull('x')).to eq(['a','b'])
+      subject.eval("x<-c('a','b')")
+      expect(subject.pull('x')).to eq(['a','b'])
     end
 
     it "should push a Matrix" do
       matrix=Matrix::build(100, 200){|i, j| rand} # 100 x 200 matrix
-      expect{R.assign('x',matrix)}.not_to raise_error
-      rx=R.x
+      expect{subject.assign('x',matrix)}.not_to raise_error
+      rx=subject.x
       matrix.row_size.times {|i|
         matrix.column_size.times {|j|
           expect(matrix[i,j]).to be_within(1e-10).of(rx[i,j])
         }
       }
     end
-    
   end
-
   context "on quit" do
-    let(:r){RinRuby.new(:echo=>false)}
     it "return true" do
       expect(r.quit).to be_truthy
     end
