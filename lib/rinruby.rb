@@ -496,6 +496,7 @@ def initialize(*args)
   RinRuby_Type_String = 2
   RinRuby_Type_String_Array = 3
   RinRuby_Type_Matrix = 4
+  RinRuby_Type_Boolean = 5
 
   RinRuby_Socket = "#{RinRuby_Env}$socket"
   RinRuby_Parse_String = "#{RinRuby_Env}$parse.string"
@@ -553,6 +554,8 @@ def initialize(*args)
           value <- #{RinRuby_Env}$read(con, numeric, length)
         } else if ( type == #{RinRuby_Type_Integer} ) {
           value <- #{RinRuby_Env}$read(con, integer, length)
+        } else if ( type == #{RinRuby_Type_Boolean} ) {
+          value <- #{RinRuby_Env}$read(con, logical, length)
         } else if ( type == #{RinRuby_Type_String_Array} ) {
           value <- character(length)
           for(i in 1:length){
@@ -597,6 +600,11 @@ def initialize(*args)
         #{RinRuby_Env}$write(con, 
             as.integer(#{RinRuby_Type_String_Array}),
             as.integer(length(var)))
+      } else if ( is.logical(var) ) {
+        #{RinRuby_Env}$write(con, 
+            as.integer(#{RinRuby_Type_Boolean}),
+            as.integer(length(var)),
+            var)
       } else {
         #{RinRuby_Env}$write(con, as.integer(#{RinRuby_Type_Unknown}))
       }
@@ -653,6 +661,15 @@ def initialize(*args)
     type = (if value.any?{|x| x.kind_of?(String)}
       value = value.collect{|v| v.to_s}
       RinRuby_Type_String_Array
+    elsif value_b = value.collect{|v|
+          case v
+          when true; 1
+          when false; 0
+          else; break false
+          end
+        }
+      value = value_b
+      RinRuby_Type_Boolean
     elsif value.all?{|x|
           x.kind_of?(Integer) && (x >= RinRuby_Min_R_Integer) && (x <= RinRuby_Max_R_Integer)
         }
@@ -669,7 +686,8 @@ def initialize(*args)
     socket_session{|socket|
       @writer.puts(r_exp)
       socket.write([type, value.size].pack('NN'))
-      if type == RinRuby_Type_String_Array
+      case type
+      when RinRuby_Type_String_Array
         value.each{|v|
           socket.write(v)
           socket.write([0].pack('C')) # zero-terminated strings
@@ -694,28 +712,31 @@ def initialize(*args)
       end
       length = to_signed_int(socket.read(4).unpack('N')).first
   
-      if ( type == RinRuby_Type_Double )
+      case type
+      when RinRuby_Type_Double
         result = socket.read(8 * length).unpack("G#{length}")
-        result = result[0] if (!singletons) && (length == 1)
-      elsif ( type == RinRuby_Type_Integer )
+        (!singletons) && (length == 1) ? result[0] : result 
+      when RinRuby_Type_Integer
         result = to_signed_int(socket.read(4 * length).unpack("N#{length}"))
-        result = result[0] if (!singletons) && (length == 1)
-      elsif ( type == RinRuby_Type_String )
+        (!singletons) && (length == 1) ? result[0] : result
+      when RinRuby_Type_String
         result = socket.read(length)
         socket.read(1) # zero-terminated string
         result
-      elsif ( type == RinRuby_Type_String_Array )
-        result = Array.new(length){|i|
+      when RinRuby_Type_String_Array
+        Array.new(length){|i|
           pull_proc.call("#{var}[#{i+1}]", socket)
         }
-      elsif (type == RinRuby_Type_Matrix)
-        result = Matrix.rows(length.times.collect{|i|
+      when RinRuby_Type_Matrix
+        Matrix.rows(length.times.collect{|i|
           pull_proc.call("#{var}[#{i+1},]", socket)
         })
+      when RinRuby_Type_Boolean
+        result = socket.read(4 * length).unpack("N#{length}").collect{|v| v > 0}
+        (!singletons) && (length == 1) ? result[0] : result
       else
         raise "Unsupported data type on Ruby's end"
       end
-      result
     }
     socket_session{|socket|
       pull_proc.call(string, socket)
