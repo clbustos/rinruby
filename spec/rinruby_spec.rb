@@ -3,15 +3,19 @@ require 'rinruby'
 puts "RinRuby #{RinRuby::VERSION} specification"
 
 shared_examples 'RinRubyCore' do
-  #before{
-  #  subject.echo(false)
-  #}
+  let(:params){
+    {
+      :echo_enabled => false, 
+      :interactive => false, 
+      :executable => nil, 
+      :port_number => 38500,
+      :port_width => 1000,
+    }
+  }
   describe "on init" do
     it "should accept parameters as specified on Dahl & Crawford(2009)" do
       expect(r.echo_enabled).to be_falsy
       expect(r.interactive).to be_falsy
-      expect(r.port_number).to eq(params[:port_number])
-      expect(r.port_width).to eq(params[:port_width])
       case r.instance_variable_get(:@platform)
       when /^windows/ then
         expect(r.executable).to match(/Rterm\.exe["']?$/)
@@ -20,7 +24,7 @@ shared_examples 'RinRubyCore' do
       end      
     end
     it "should accept custom :port_number" do
-      params.merge!(:port_number => 38442+rand(3))
+      params.merge!(:port_number => 38442+rand(3), :port_width => 1)
       expect(r.port_number).to eq(params[:port_number])
     end
     it "should accept custom :port_width" do
@@ -32,9 +36,8 @@ shared_examples 'RinRubyCore' do
     end
   end
   describe "R interface" do
-    subject{
-      R_INSTANCE ||= r
-    }
+    before(:all){@cached_env = {:r => nil}} # make placeholder
+    subject{@cached_env[:r] ||= r}
     describe "basic methods" do 
       it {is_expected.to respond_to(:eval)}
       it {is_expected.to respond_to(:assign)}
@@ -126,15 +129,6 @@ shared_examples 'RinRubyCore' do
 end
 
 describe RinRuby do
-  let(:params){
-    {
-      :echo_enabled => false, 
-      :interactive => false, 
-      :executable => nil, 
-      :port_number => 38500, 
-      :port_width => 1,
-    }
-  }
   let(:r){
     RinRuby.new(*([:echo_enabled, :interactive, :executable, :port_number, :port_width].collect{|k| params[k]}))
   }
