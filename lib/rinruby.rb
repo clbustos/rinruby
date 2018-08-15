@@ -553,7 +553,7 @@ def initialize(*args)
           value <- #{RinRuby_Env}$read(con, numeric, length)
         } else if ( type == #{RinRuby_Type_Integer} ) {
           value <- #{RinRuby_Env}$read(con, integer, length)
-        } else if ( type == #{RinRuby_Type_String} ) {
+        } else if ( type == #{RinRuby_Type_String_Array} ) {
           value <- character(length)
           for(i in 1:length){
             value[i] <- #{RinRuby_Env}$read(con, character, 1)
@@ -652,7 +652,7 @@ def initialize(*args)
     
     type = (if value.any?{|x| x.kind_of?(String)}
       value = value.collect{|v| v.to_s}
-      RinRuby_Type_String
+      RinRuby_Type_String_Array
     elsif value.all?{|x|
           x.kind_of?(Integer) && (x >= RinRuby_Min_R_Integer) && (x <= RinRuby_Max_R_Integer)
         }
@@ -669,7 +669,7 @@ def initialize(*args)
     socket_session{|socket|
       @writer.puts(r_exp)
       socket.write([type, value.size].pack('NN'))
-      if type == RinRuby_Type_String
+      if type == RinRuby_Type_String_Array
         value.each{|v|
           socket.write(v)
           socket.write([0].pack('C')) # zero-terminated strings
