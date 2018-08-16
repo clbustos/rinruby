@@ -108,16 +108,20 @@ shared_examples 'RinRubyCore' do
         subject.eval("x<-1.5")
         expect(subject.pull('x')).to eq(1.5)
       end
-      it "should pull an Array of Numeric" do
-        subject.eval("x<-c(1,2.5,3)")
-        expect(subject.pull('x')).to eq([1,2.5,3])
-      end
-      it "should pull an Array of strings" do
+      it "should pull an Array of String" do
         subject.eval("x<-c('a','b')")
         expect(subject.pull('x')).to eq(['a','b'])
       end
+      it "should pull an Array of Integer" do
+        subject.eval("x<-c(1,2.5,3)")
+        expect(subject.pull('x')).to eq([1,2.5,3])
+      end
+      it "should pull an Array of Float" do
+        subject.eval("x<-c(1.1,2.2,5,3)")
+        expect(subject.pull('x')).to eq([1.1,2.2,5.0,3.0])
+      end
 
-      it "should push a Matrix" do
+      it "should pull a Matrix" do
         matrix=Matrix::build(100, 200){|i, j| rand} # 100 x 200 matrix
         expect{subject.assign('x',matrix)}.not_to raise_error
         rx=subject.x
