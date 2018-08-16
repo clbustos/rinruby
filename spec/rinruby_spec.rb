@@ -13,6 +13,7 @@ shared_examples 'RinRubyCore' do
     }
   }
   describe "on init" do
+    after{(r.quit rescue nil) if defined?(r)}
     it "should accept parameters as specified on Dahl & Crawford(2009)" do
       expect(r.echo_enabled).to be_falsy
       expect(r.interactive).to be_falsy
@@ -47,7 +48,8 @@ shared_examples 'RinRubyCore' do
     # because a new instance variable will be created for the following examples.
     # For workaround, two-step indirect assignment to a hash created in before(:all) is applied. 
     before(:all){@cached_env = {:r => nil}} # make placeholder
-    subject{@cached_env[:r] ||= r} 
+    subject{@cached_env[:r] ||= r}
+    after(:all){@cached_env[:r].quit rescue nil}
     describe "basic methods" do 
       it {is_expected.to respond_to(:eval)}
       it {is_expected.to respond_to(:assign)}
