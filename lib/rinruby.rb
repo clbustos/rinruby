@@ -492,12 +492,16 @@ def initialize(*args)
   #:stopdoc:
   RinRuby_Type_NotFound = -2
   RinRuby_Type_Unknown = -1
-  RinRuby_Type_Double = 0
-  RinRuby_Type_Integer = 1
-  RinRuby_Type_String = 2
-  RinRuby_Type_String_Array = 3
-  RinRuby_Type_Matrix = 4
-  RinRuby_Type_Boolean = 5
+  [
+    :Boolean,
+    :Integer,
+    :Double,
+    :String,
+    :String_Array,
+    :Matrix,
+  ].each_with_index{|type, i|
+    eval("RinRuby_Type_#{type} = i")
+  }
 
   RinRuby_Socket = "#{RinRuby_Env}$socket"
   RinRuby_Parse_String = "#{RinRuby_Env}$parse.string"
@@ -506,11 +510,9 @@ def initialize(*args)
   RinRuby_Stderr_Flag = "RINRUBY.STDERR.FLAG"
   RinRuby_Exit_Flag = "RINRUBY.EXIT.FLAG"
   
-  RinRuby_Max_Unsigned_Integer = 2**32
-  RinRuby_Half_Max_Unsigned_Integer = 2**31
-  RinRuby_NA_R_Integer = 2**31
-  RinRuby_Max_R_Integer = 2**31-1
-  RinRuby_Min_R_Integer = -2**31+1
+  RinRuby_NA_R_Integer  = -(1 << 31)
+  RinRuby_Max_R_Integer =  (1 << 31) - 1
+  RinRuby_Min_R_Integer = -(1 << 31) + 1
   #:startdoc:
 
   def r_rinruby_socket_io
@@ -551,12 +553,12 @@ def initialize(*args)
         value <- NULL
         type <- #{RinRuby_Env}$read(con, integer, 1)
         length <- #{RinRuby_Env}$read(con, integer, 1)
-        if ( type == #{RinRuby_Type_Double} ) {
-          value <- #{RinRuby_Env}$read(con, numeric, length)
+        if ( type == #{RinRuby_Type_Boolean} ) {
+          value <- #{RinRuby_Env}$read(con, logical, length)
         } else if ( type == #{RinRuby_Type_Integer} ) {
           value <- #{RinRuby_Env}$read(con, integer, length)
-        } else if ( type == #{RinRuby_Type_Boolean} ) {
-          value <- #{RinRuby_Env}$read(con, logical, length)
+        } else if ( type == #{RinRuby_Type_Double} ) {
+          value <- #{RinRuby_Env}$read(con, numeric, length)
         } else if ( type == #{RinRuby_Type_String_Array} ) {
           value <- character(length)
           for(i in 1:length){
@@ -582,14 +584,19 @@ def initialize(*args)
         #{RinRuby_Env}$write(con,
             as.integer(#{RinRuby_Type_Matrix}),
             as.integer(dim(var)[1]))
-      } else if ( is.double(var) ) {
-        #{RinRuby_Env}$write(con,
-            as.integer(#{RinRuby_Type_Double}),
+      } else if ( is.logical(var) ) {
+        #{RinRuby_Env}$write(con, 
+            as.integer(#{RinRuby_Type_Boolean}),
             as.integer(length(var)),
-            var)
+            as.integer(var))
       } else if ( is.integer(var) ) {
         #{RinRuby_Env}$write(con, 
             as.integer(#{RinRuby_Type_Integer}),
+            as.integer(length(var)),
+            var)
+      } else if ( is.double(var) ) {
+        #{RinRuby_Env}$write(con,
+            as.integer(#{RinRuby_Type_Double}),
             as.integer(length(var)),
             var)
       } else if ( is.character(var) && ( length(var) == 1 ) ) {
@@ -601,11 +608,6 @@ def initialize(*args)
         #{RinRuby_Env}$write(con, 
             as.integer(#{RinRuby_Type_String_Array}),
             as.integer(length(var)))
-      } else if ( is.logical(var) ) {
-        #{RinRuby_Env}$write(con, 
-            as.integer(#{RinRuby_Type_Boolean}),
-            as.integer(length(var)),
-            var)
       } else {
         #{RinRuby_Env}$write(con, as.integer(#{RinRuby_Type_Unknown}))
       }
@@ -652,11 +654,8 @@ def initialize(*args)
       value = [value]
     end
     
-    type = (if value.any?{|x| x.kind_of?(String)}
-      value = value.collect{|v| v.to_s}
-      RinRuby_Type_String_Array
-    elsif value_b = value.collect{|v|
-          case v
+    type = (if value_b = value.collect{|x|
+          case x
           when true; 1
           when false; 0
           else; break false
@@ -668,13 +667,20 @@ def initialize(*args)
           x.kind_of?(Integer) && (x >= RinRuby_Min_R_Integer) && (x <= RinRuby_Max_R_Integer)
         }
       RinRuby_Type_Integer
-    else
-      begin
-        value = value.collect{|x| Float(x)}
-      rescue
-        raise "Unsupported data type on Ruby's end"
-      end
+    elsif value_f = value.collect{|x|
+          break false unless x.kind_of?(Numeric)
+          Float(x)
+        }
+      value = value_f
       RinRuby_Type_Double
+    elsif value_s = value.collect{|x| 
+          break false unless x.kind_of?(String)
+          x.to_s
+        }
+      value = value_s
+      RinRuby_Type_String_Array
+    else
+      raise "Unsupported data type on Ruby's end"
     end)
     
     socket_session{|socket|
@@ -707,12 +713,15 @@ def initialize(*args)
       length = socket.read(4).unpack('l').first
   
       case type
-      when RinRuby_Type_Double
-        result = socket.read(8 * length).unpack("D#{length}")
-        (!singletons) && (length == 1) ? result[0] : result 
+      when RinRuby_Type_Boolean
+        result = socket.read(4 * length).unpack("l#{length}").collect{|v| v > 0}
+        (!singletons) && (length == 1) ? result[0] : result
       when RinRuby_Type_Integer
         result = socket.read(4 * length).unpack("l#{length}")
         (!singletons) && (length == 1) ? result[0] : result
+      when RinRuby_Type_Double
+        result = socket.read(8 * length).unpack("D#{length}")
+        (!singletons) && (length == 1) ? result[0] : result 
       when RinRuby_Type_String
         result = socket.read(length)
         socket.read(1) # zero-terminated string
@@ -725,9 +734,6 @@ def initialize(*args)
         Matrix.rows(length.times.collect{|i|
           pull_proc.call("#{var}[#{i+1},]", socket)
         })
-      when RinRuby_Type_Boolean
-        result = socket.read(4 * length).unpack("l#{length}").collect{|v| v > 0}
-        (!singletons) && (length == 1) ? result[0] : result
       else
         raise "Unsupported data type on Ruby's end"
       end
