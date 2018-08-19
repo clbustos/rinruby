@@ -1,3 +1,43 @@
+=== 2.1.0 / 2018-08-19
+
+638df01 Ruby 2.0.0 deprecated
+86d2370 Omit to_signed_int() with signed pack for speed optimization
+7c182ec Use native endian on Ruby side for speed optimization
+ca8c9a1 Add corner case tests
+555e7d2 Add logical value pull tests
+312b9c9 Add logical value assign/pull
+350ce77 Change type from String to String_Array when assign based on procedure
+e2ce0e1 Optimize pull engine
+c22f821 Separate numeric pull test into integer and float tests
+1ba51e1 Add after{r.quit} to each example because of socket reusability
+7f59977 Revive echo and interactive tests, and add comment of test cache
+a034124 Fix to use a cached RinRuby instance
+a8f4cf1 Update README.md
+17baae9 Update matrix assignment test to use a large matrix
+1a147fd Optimize assign_engine()
+8418a65 Change string assignment scheme to accept array in a same session
+8c6fd6a Add cleanup for socket when connection is persistent
+0ddab52 Add persistent mode to reuse connection, which is now default.
+aa7c90e Optimize performing singleton of pull returned value
+1a29474 Move R socket manipulation procedure into socket_seession() on Ruby
+e1b96ba Refactoring; move socket.close from each procedure to socket_session
+de954ed Reduce namespace contamination by using ".RinRuby" environment
+9519355 Move socketConnection() and close() to session()
+59ffe63 Move rinruby R function assignment from global to base environment
+13056c4 Change socket connection scheme for GC resistance
+97cf371 Perform communication via #{RinRuby_Socket}.write and read functions
+0a2b411 Remove duplication by using dummy R constant temporary
+964d0ae Improve possibility to find R by using regtool on cygwin
+89b7304 Add the R wrapper class without R constant
+bba176b Add a safety net when Windows R is not registered in registry
+67afbe1 Internationalization; workaround for "invalid byte sequence in UTF-8"
+61d0817 Change registry search query because of structure change of R3.4.3
+9433299 Change strategy to find R executable for cygwin-windows
+2515984 Error in README.md example code
+8ff82c1 Markdownify README.md
+e09cc95 Rename README.txt to README.md
+1b05f3e added support for bundler and gemspec
+
 === 2.0.3 / 2012-07-31
 * Update README.txt
 
