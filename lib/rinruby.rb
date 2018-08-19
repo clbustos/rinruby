@@ -71,7 +71,8 @@ class RinRuby
   # Parse error
   ParseError=Class.new(Exception)
 
-  RinRuby_Env = ".RinRuby"  
+  RinRuby_Env = ".RinRuby"
+  RinRuby_Endian = ([1].pack("L").unpack("C*")[0] == 1) ? (:little) : (:big)
   
 #RinRuby is invoked within a Ruby script (or the interactive "irb" prompt denoted >>) using:
 #
@@ -520,10 +521,10 @@ def initialize(*args)
       }
       #{RinRuby_Env}$write <- function(con, v, ...){
         invisible(lapply(list(v, ...), function(v2){
-            writeBin(v2, con, endian="big")}))
+            writeBin(v2, con, endian="#{RinRuby_Endian}")}))
       }
       #{RinRuby_Env}$read <- function(con, vtype, len){
-        invisible(readBin(con, vtype(), len, endian="big"))
+        invisible(readBin(con, vtype(), len, endian="#{RinRuby_Endian}"))
       }
     EOF
   end
@@ -685,7 +686,7 @@ def initialize(*args)
     
     socket_session{|socket|
       @writer.puts(r_exp)
-      socket.write([type, value.size].pack('NN'))
+      socket.write([type, value.size].pack('LL'))
       case type
       when RinRuby_Type_String_Array
         value.each{|v|
@@ -693,7 +694,7 @@ def initialize(*args)
           socket.write([0].pack('C')) # zero-terminated strings
         }
       else
-        socket.write(value.pack("#{(type == RinRuby_Type_Double) ? 'G' : 'N'}#{value.size}"))
+        socket.write(value.pack("#{(type == RinRuby_Type_Double) ? 'D' : 'L'}#{value.size}"))
       end
     }
     
@@ -703,21 +704,21 @@ def initialize(*args)
   def pull_engine(string, singletons = true)
     pull_proc = proc{|var, socket|
       @writer.puts "#{RinRuby_Env}$pull(try(#{var}))"  
-      type = to_signed_int(socket.read(4).unpack('N')).first
+      type = to_signed_int(socket.read(4).unpack('L')).first
       case type
       when RinRuby_Type_Unknown
         raise "Unsupported data type on R's end"
       when RinRuby_Type_NotFound
         return nil
       end
-      length = to_signed_int(socket.read(4).unpack('N')).first
+      length = to_signed_int(socket.read(4).unpack('L')).first
   
       case type
       when RinRuby_Type_Double
-        result = socket.read(8 * length).unpack("G#{length}")
+        result = socket.read(8 * length).unpack("D#{length}")
         (!singletons) && (length == 1) ? result[0] : result 
       when RinRuby_Type_Integer
-        result = to_signed_int(socket.read(4 * length).unpack("N#{length}"))
+        result = to_signed_int(socket.read(4 * length).unpack("L#{length}"))
         (!singletons) && (length == 1) ? result[0] : result
       when RinRuby_Type_String
         result = socket.read(length)
@@ -732,7 +733,7 @@ def initialize(*args)
           pull_proc.call("#{var}[#{i+1},]", socket)
         })
       when RinRuby_Type_Boolean
-        result = socket.read(4 * length).unpack("N#{length}").collect{|v| v > 0}
+        result = socket.read(4 * length).unpack("L#{length}").collect{|v| v > 0}
         (!singletons) && (length == 1) ? result[0] : result
       else
         raise "Unsupported data type on Ruby's end"
@@ -747,7 +748,7 @@ def initialize(*args)
     assign_engine(RinRuby_Parse_String, string)
     result = socket_session{|socket|
       @writer.puts "#{RinRuby_Env}$parseable(#{RinRuby_Parse_String})"
-      to_signed_int(socket.read(4).unpack('N')).first
+      to_signed_int(socket.read(4).unpack('L')).first
     }
     return result==-1 ? false : true
 
