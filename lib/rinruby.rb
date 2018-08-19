@@ -614,13 +614,6 @@ def initialize(*args)
 }
     EOF
   end
-  def to_signed_int(values)
-    values.collect{|v|
-      (v > RinRuby_Half_Max_Unsigned_Integer) \
-          ? -(RinRuby_Max_Unsigned_Integer - v) \
-          : (v == RinRuby_NA_R_Integer ? nil : v)
-    }
-  end
   
   def socket_session(&b)
     socket = @socket
@@ -694,7 +687,7 @@ def initialize(*args)
           socket.write([0].pack('C')) # zero-terminated strings
         }
       else
-        socket.write(value.pack("#{(type == RinRuby_Type_Double) ? 'D' : 'L'}#{value.size}"))
+        socket.write(value.pack("#{(type == RinRuby_Type_Double) ? 'D' : 'l'}#{value.size}"))
       end
     }
     
@@ -704,21 +697,21 @@ def initialize(*args)
   def pull_engine(string, singletons = true)
     pull_proc = proc{|var, socket|
       @writer.puts "#{RinRuby_Env}$pull(try(#{var}))"  
-      type = to_signed_int(socket.read(4).unpack('L')).first
+      type = socket.read(4).unpack('l').first
       case type
       when RinRuby_Type_Unknown
         raise "Unsupported data type on R's end"
       when RinRuby_Type_NotFound
         return nil
       end
-      length = to_signed_int(socket.read(4).unpack('L')).first
+      length = socket.read(4).unpack('l').first
   
       case type
       when RinRuby_Type_Double
         result = socket.read(8 * length).unpack("D#{length}")
         (!singletons) && (length == 1) ? result[0] : result 
       when RinRuby_Type_Integer
-        result = to_signed_int(socket.read(4 * length).unpack("L#{length}"))
+        result = socket.read(4 * length).unpack("l#{length}")
         (!singletons) && (length == 1) ? result[0] : result
       when RinRuby_Type_String
         result = socket.read(length)
@@ -733,7 +726,7 @@ def initialize(*args)
           pull_proc.call("#{var}[#{i+1},]", socket)
         })
       when RinRuby_Type_Boolean
-        result = socket.read(4 * length).unpack("L#{length}").collect{|v| v > 0}
+        result = socket.read(4 * length).unpack("l#{length}").collect{|v| v > 0}
         (!singletons) && (length == 1) ? result[0] : result
       else
         raise "Unsupported data type on Ruby's end"
@@ -748,7 +741,7 @@ def initialize(*args)
     assign_engine(RinRuby_Parse_String, string)
     result = socket_session{|socket|
       @writer.puts "#{RinRuby_Env}$parseable(#{RinRuby_Parse_String})"
-      to_signed_int(socket.read(4).unpack('L')).first
+      socket.read(4).unpack('l').first
     }
     return result==-1 ? false : true
 
