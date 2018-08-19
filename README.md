@@ -16,6 +16,8 @@ Documented by David B. Dahl and Scott Crawford
 Homepage: http://rinruby.ddahl.org
 
 Maintainer: Claudio Bustos
+Contributors: 
+* {fenrir-naru}[https://fenrir.naruoka.org] 
 
 ### FEATURES/PROBLEMS
 
