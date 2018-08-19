@@ -69,77 +69,151 @@ shared_examples 'RinRubyCore' do
         expect{subject.eval("x<-")}.to raise_error(RinRuby::ParseError)
       end
     end
-    context "on assign" do
-      let(:x){rand} 
-      it "should assign correctly" do
-        subject.assign("x",x)
-        expect(subject.pull("x")).to eq(x)
+    
+    context "on pull" do
+      it "should pull a String" do
+        subject.eval("x<-'Value'")
+        expect(subject.pull('x')).to eql('Value')
       end
+      it "should pull an Integer" do
+        [0x12345678, -0x12345678].each{|v| # for check endian, and range
+          subject.eval("x<-#{v}L")
+          expect(subject.pull('x')).to eql(v)
+        }
+      end
+      it "should pull a Float" do
+        [1.5, 1.0].each{|v|
+          subject.eval("x<-#{v}e0")
+          expect(subject.pull('x')).to eql(v)
+        }
+        [1 << 32, -(1 << 32)].each{|v| # big integer will be treated as float
+          subject.eval("x<-#{v}")
+          expect(subject.pull('x')).to eql(v.to_f)
+        }
+      end
+      it "should pull a Logical" do
+        {:T => true, :F => false}.each{|k, v|
+          subject.eval("x<-#{k}")
+          expect(subject.pull('x')).to eql(v)
+        }
+      end
+      it "should pull an Array of String" do
+        subject.eval("x<-c('a','b')")
+        expect(subject.pull('x')).to eql(['a','b'])
+      end
+      it "should pull an Array of Integer" do
+        subject.eval("x<-c(1L,2L,-5L,-3L)")
+        expect(subject.pull('x')).to eql([1,2,-5,-3])
+      end
+      it "should pull an Array of Float" do
+        subject.eval("x<-c(1.1,2.2,5,3)")
+        expect(subject.pull('x')).to eql([1.1,2.2,5.0,3.0])
+        subject.eval("x<-c(1L,2L,5L,3.0)") # numeric vector 
+        expect(subject.pull('x')).to eql([1.0,2.0,5.0,3.0])
+      end
+      it "should pull an Array of Logical" do
+        subject.eval("x<-c(T, F)")
+        expect(subject.pull('x')).to eql([true, false])
+      end
+
+      it "should pull a Matrix" do
+        [
+          proc{ # integer matrix
+            v = rand(100000000) # get 8 digits
+            [v, "#{v}L"]
+          },
+          proc{ # float matrix
+            v = rand(100000000) # get 8 digits
+            [Float("0.#{v}"), "0.#{v}"]
+          },
+        ].each{|gen_proc|
+          nrow, ncol = [10, 10] # 10 x 10 small matrix
+          subject.eval("x<-matrix(nrow=#{nrow}, ncol=#{ncol})")
+          rx = Matrix[*((1..nrow).collect{|i|
+            (1..ncol).collect{|j|
+              v_rb, v_R = gen_proc.call
+              subject.eval("x[#{i},#{j}]<-#{v_R}")
+              v_rb
+            }
+          })]
+          expect(subject.pull('x')).to eql(rx)
+        }
+      end
+      
+      it "should be the same using pull than R# methods" do
+        subject.eval("x <- #{rand(100000000)}")
+        expect(subject.pull("x")).to eql(subject.x)
+      end
+      it "should raise an NoMethod error on getter with 1 or more parameters" do
+        expect{subject.unknown_method(1)}.to raise_error(NoMethodError)
+      end
+    end
+    
+    context "on assign (PREREQUISITE: all pull tests are passed)" do
+      it "should assign a String" do
+        x = 'Value'
+        subject.assign("x", x)
+        expect(subject.pull('x')).to eql(x)
+      end
+      it "should assign an Integer" do
+        [0x12345678, -0x12345678].each{|x|
+          subject.assign("x", x)
+          expect(subject.pull('x')).to eql(x)
+        }
+      end
+      it "should assign a Float" do
+        [rand, 1 << 32, -(1 << 32)].each{|x|
+          subject.assign("x", x)
+          expect(subject.pull('x')).to eql(x.to_f)
+        }
+      end
+      it "should assign a Logical" do
+        [true, false].each{|x|
+          subject.assign("x", x)
+          expect(subject.pull('x')).to eql(x)
+        }
+      end
+      it "should assign an Array of String" do
+        x = ['a', 'b']
+        subject.assign("x", x)
+        expect(subject.pull('x')).to eql(x)
+      end
+      it "should assign an Array of Integer" do
+        x = [1, 2, -5, -3]
+        subject.assign("x", x)
+        expect(subject.pull('x')).to eql(x)
+      end
+      it "should assign an Array of Float" do
+        subject.assign("x", [1.1, 2.2, 5, 3])
+        expect(subject.pull('x')).to eql([1.1,2.2,5.0,3.0])
+      end
+      it "should assign an Array of Logical" do
+        x = [true, false]
+        subject.assign("x", x)
+        expect(subject.pull('x')).to eql(x)
+      end
+
+      it "should assign a Matrix" do
+        [
+          proc{rand(100000000)}, # integer matrix
+          proc{rand}, # float matrix
+        ].each{|gen_proc|
+          x = Matrix::build(100, 200){|i, j| gen_proc.call} # 100 x 200 matrix
+          subject.assign("x", x)
+          expect(subject.pull('x')).to eql(x)
+        }
+      end
+      
       it "should be the same using assign than R#= methods" do
-        subject.assign("x1",x)
-        subject.x2=x
-        expect(subject.pull("x1")).to eq(x)
-        expect(subject.pull("x2")).to eq(x)
+        x = rand(100000000)
+        subject.assign("x1", x)
+        subject.x2 = x
+        expect(subject.pull("x1")).to eql(subject.pull("x2"))
       end
       it "should raise an ArgumentError error on setter with 0 parameters" do
         expect{subject.unknown_method=() }.to raise_error(ArgumentError)
       end
-    end
-    context "on pull" do
-      it "should be the same using pull than R# methods" do
-        x=rand
-        subject.x=x
-        expect(subject.pull("x")).to eq(x)
-        expect(subject.x).to eq(x)
-      end
-      it "should raise an NoMethod error on getter with 1 or more parameters" do
-        expect{subject.unknown_method(1) }.to raise_error(NoMethodError)
-      end
-
-      it "should pull a String" do
-        subject.eval("x<-'Value'")
-        expect(subject.pull('x')).to eq('Value')
-      end
-      it "should pull an Integer" do
-        subject.eval("x<-1")
-        expect(subject.pull('x')).to eq(1)
-      end
-      it "should pull a Float" do
-        subject.eval("x<-1.5")
-        expect(subject.pull('x')).to eq(1.5)
-      end
-      it "should pull a Logical" do
-        subject.eval("x<-T")
-        expect(subject.pull('x')).to eq(true)
-      end
-      it "should pull an Array of String" do
-        subject.eval("x<-c('a','b')")
-        expect(subject.pull('x')).to eq(['a','b'])
-      end
-      it "should pull an Array of Integer" do
-        subject.eval("x<-c(1,2.5,3)")
-        expect(subject.pull('x')).to eq([1,2.5,3])
-      end
-      it "should pull an Array of Float" do
-        subject.eval("x<-c(1.1,2.2,5,3)")
-        expect(subject.pull('x')).to eq([1.1,2.2,5.0,3.0])
-      end
-      it "should pull an Array of Logical" do
-        subject.eval("x<-c(T, F)")
-        expect(subject.pull('x')).to eq([true, false])
-      end
-
-      it "should pull a Matrix" do
-        matrix=Matrix::build(100, 200){|i, j| rand} # 100 x 200 matrix
-        expect{subject.assign('x',matrix)}.not_to raise_error
-        rx=subject.x
-        matrix.row_size.times {|i|
-          matrix.column_size.times {|j|
-            expect(matrix[i,j]).to be_within(1e-10).of(rx[i,j])
-          }
-        }
-      end
-    end
+    end 
   end
   
   context "on quit" do
