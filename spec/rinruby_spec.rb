@@ -195,13 +195,27 @@ shared_examples 'RinRubyCore' do
 
       it "should assign a Matrix" do
         [
-          proc{rand(100000000)}, # integer matrix
-          proc{rand}, # float matrix
-        ].each{|gen_proc|
+          [ # integer matrix
+            proc{rand(100000000)},
+            proc{|a, b| expect(a).to eql(b)},
+          ],
+          [ # float matrix
+            proc{rand},
+            proc{|a, b|
+              expect(a.row_size).to eql(b.row_size)
+              expect(a.column_size).to eql(b.column_size)
+              a.row_size.times{|i|
+                a.column_size.times{|j|
+                  expect(a[i,j]).to be_within(Float::EPSILON).of(b[i,j])
+                }
+              }
+            },
+          ],
+        ].each{|gen_proc, cmp_proc|
           x = Matrix::build(100, 200){|i, j| gen_proc.call} # 100 x 200 matrix
           subject.assign("x", x)
-          expect(subject.pull('x')).to eql(x)
-        }
+          cmp_proc.call(subject.pull('x'), x)
+        }        
       end
       
       it "should be the same using assign than R#= methods" do
