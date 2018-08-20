@@ -96,6 +96,8 @@ shared_examples 'RinRubyCore' do
         }
         subject.eval("x<-NaN")
         expect(subject.pull('x').nan?).to be_truthy
+        subject.eval("x<-as.numeric(NA)")
+        expect(subject.pull('x')).to eql(nil)
       end
       it "should pull a Logical" do
         {:T => true, :F => false, :NA => nil}.each{|k, v|
@@ -122,12 +124,12 @@ shared_examples 'RinRubyCore' do
         }
       end
       it "should pull an Array of Float" do
-        subject.eval("x<-c(1.1,2.2,5,3,NaN)") # auto-conversion to numeric vector
-        expect(subject.pull('x')[0..-2]).to eql([1.1,2.2,5.0,3.0])
+        subject.eval("x<-c(1.1,2.2,5,3,NA,NaN)") # auto-conversion to numeric vector
+        expect(subject.pull('x')[0..-2]).to eql([1.1,2.2,5.0,3.0,nil])
         expect(subject.pull('x')[-1].nan?).to be_truthy
         
-        subject.eval("x<-c(1L,2L,5L,3.0,NaN)") # auto-conversion to numeric vector 
-        expect(subject.pull('x')[0..-2]).to eql([1.0,2.0,5.0,3.0])
+        subject.eval("x<-c(1L,2L,5L,3.0,NA,NaN)") # auto-conversion to numeric vector 
+        expect(subject.pull('x')[0..-2]).to eql([1.0,2.0,5.0,3.0,nil])
         expect(subject.pull('x')[-1].nan?).to be_truthy
         
         subject.eval("x<-as.numeric(NULL)")

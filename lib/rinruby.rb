@@ -734,6 +734,12 @@ def initialize(*args)
         (!singletons) && (length == 1) ? result[0] : result
       when RinRuby_Type_Double
         result = socket.read(8 * length).unpack("D#{length}")
+        
+        # check NA; caution is.na(c(NA, NaN)) => c(T, T), is.nan(c(NA, NaN)) => c(F, T) 
+        @writer.puts "#{RinRuby_Env}$pull(which(is.na(#{var} & (!is.nan(#{var})))) - 1L)"
+        na_indices = socket.read(8).unpack('ll')[1]
+        socket.read(4 * na_indices).unpack("l#{na_indices}").each{|i| result[i] = nil}
+        
         (!singletons) && (length == 1) ? result[0] : result 
       when RinRuby_Type_String
         # negative length means NA, and "+ 1" for zero-terminated string
