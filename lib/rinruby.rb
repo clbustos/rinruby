@@ -659,34 +659,51 @@ def initialize(*args)
       value = [value]
     end
     
-    type = (if value_b = value.collect{|x|
+    nil_indices = nil
+    type = (if value_b = value.collect{|x| # check Boolean (=> logical)
           case x
-          when true; 1
+          when true;  1
           when false; 0
-          when nil; RinRuby_NA_R_Integer
-          else; break false
+          when nil;   RinRuby_NA_R_Integer
+          else;       break false
           end rescue break false # combination of Float::NAN and "case" flow invokes FloatDomainError
         }
       value = value_b
       RinRuby_Type_Boolean
-    elsif value_i = value.collect{|x|
+    elsif value_i = value.collect{|x| # check Integer (=> integer)
           next RinRuby_NA_R_Integer if x == nil
           next x if x.kind_of?(Integer) && (x >= RinRuby_Min_R_Integer) && (x <= RinRuby_Max_R_Integer)
           break false
         }
       value = value_i
       RinRuby_Type_Integer
-    elsif value_f = value.collect{|x|
-          break false unless x.kind_of?(Numeric)
-          Float(x)
-        }
-      value = value_f
+    elsif proc{ # check Float (=> numeric)
+          nils = []
+          value_f = value.collect.with_index{|x, i|
+            case x
+            when nil;     nils << i; Float::NAN
+            when Numeric; x.to_f
+            else;         break false
+            end
+          }
+          next false unless value_f
+          nil_indices = nils
+          value = value_f
+        }.call
       RinRuby_Type_Double
-    elsif value_s = value.collect{|x| 
-          break false unless x.kind_of?(String)
-          x.to_s
-        }
-      value = value_s
+    elsif proc{ # check String (=> character)
+          nils = []
+          value_s = value.collect.with_index{|x, i|
+            case x
+            when nil;     nils << i; nil
+            when String;   x.to_s
+            else;          break false
+            end
+          }
+          next false unless value_s
+          nil_indices = nils
+          value = value_s
+        }.call
       RinRuby_Type_String_Array
     else
       raise "Unsupported data type on Ruby's end"
