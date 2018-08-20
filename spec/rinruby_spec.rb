@@ -92,7 +92,7 @@ shared_examples 'RinRubyCore' do
         }
       end
       it "should pull a Logical" do
-        {:T => true, :F => false}.each{|k, v|
+        {:T => true, :F => false, :NA => nil}.each{|k, v|
           subject.eval("x<-#{k}")
           expect(subject.pull('x')).to eql(v)
         }
@@ -102,8 +102,8 @@ shared_examples 'RinRubyCore' do
         expect(subject.pull('x')).to eql(['a','b'])
       end
       it "should pull an Array of Integer" do
-        subject.eval("x<-c(1L,2L,-5L,-3L)")
-        expect(subject.pull('x')).to eql([1,2,-5,-3])
+        subject.eval("x<-c(1L,2L,-5L,-3L,NA)")
+        expect(subject.pull('x')).to eql([1,2,-5,-3,nil])
       end
       it "should pull an Array of Float" do
         subject.eval("x<-c(1.1,2.2,5,3)")
@@ -112,8 +112,8 @@ shared_examples 'RinRubyCore' do
         expect(subject.pull('x')).to eql([1.0,2.0,5.0,3.0])
       end
       it "should pull an Array of Logical" do
-        subject.eval("x<-c(T, F)")
-        expect(subject.pull('x')).to eql([true, false])
+        subject.eval("x<-c(T, F, NA)")
+        expect(subject.pull('x')).to eql([true, false, nil])
       end
 
       it "should pull a Matrix" do
@@ -168,7 +168,7 @@ shared_examples 'RinRubyCore' do
         }
       end
       it "should assign a Logical" do
-        [true, false].each{|x|
+        [true, false, nil].each{|x|
           subject.assign("x", x)
           expect(subject.pull('x')).to eql(x)
         }
@@ -179,7 +179,7 @@ shared_examples 'RinRubyCore' do
         expect(subject.pull('x')).to eql(x)
       end
       it "should assign an Array of Integer" do
-        x = [1, 2, -5, -3]
+        x = [1, 2, -5, -3, nil]
         subject.assign("x", x)
         expect(subject.pull('x')).to eql(x)
       end
@@ -188,7 +188,7 @@ shared_examples 'RinRubyCore' do
         expect(subject.pull('x')).to eql([1.1,2.2,5.0,3.0])
       end
       it "should assign an Array of Logical" do
-        x = [true, false]
+        x = [true, false, nil]
         subject.assign("x", x)
         expect(subject.pull('x')).to eql(x)
       end

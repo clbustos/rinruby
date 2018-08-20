@@ -658,14 +658,18 @@ def initialize(*args)
           case x
           when true; 1
           when false; 0
+          when nil; RinRuby_NA_R_Integer
           else; break false
           end
         }
       value = value_b
       RinRuby_Type_Boolean
-    elsif value.all?{|x|
-          x.kind_of?(Integer) && (x >= RinRuby_Min_R_Integer) && (x <= RinRuby_Max_R_Integer)
+    elsif value_i = value.collect{|x|
+          next RinRuby_NA_R_Integer if x == nil
+          next x if x.kind_of?(Integer) && (x >= RinRuby_Min_R_Integer) && (x <= RinRuby_Max_R_Integer)
+          break false
         }
+      value = value_i
       RinRuby_Type_Integer
     elsif value_f = value.collect{|x|
           break false unless x.kind_of?(Numeric)
@@ -714,10 +718,14 @@ def initialize(*args)
   
       case type
       when RinRuby_Type_Boolean
-        result = socket.read(4 * length).unpack("l#{length}").collect{|v| v > 0}
+        result = socket.read(4 * length).unpack("l#{length}").collect{|v|
+          (v == RinRuby_NA_R_Integer) ? nil : (v > 0)
+        }
         (!singletons) && (length == 1) ? result[0] : result
       when RinRuby_Type_Integer
-        result = socket.read(4 * length).unpack("l#{length}")
+        result = socket.read(4 * length).unpack("l#{length}").collect{|v|
+          (v == RinRuby_NA_R_Integer) ? nil : v
+        }
         (!singletons) && (length == 1) ? result[0] : result
       when RinRuby_Type_Double
         result = socket.read(8 * length).unpack("D#{length}")
