@@ -238,11 +238,12 @@ shared_examples 'RinRubyCore' do
           [ # float matrix
             proc{rand},
             proc{|a, b|
+              threshold = Float::EPSILON * 10
               expect(a.row_size).to eql(b.row_size)
               expect(a.column_size).to eql(b.column_size)
               a.row_size.times{|i|
                 a.column_size.times{|j|
-                  expect(a[i,j]).to be_within(Float::EPSILON).of(b[i,j])
+                  expect(a[i,j]).to be_within(threshold).of(b[i,j])
                 }
               }
             },
@@ -250,12 +251,13 @@ shared_examples 'RinRubyCore' do
           [ # float matrix with NA
             proc{v = rand; v > 0.5 ? nil : v},
             proc{|a, b|
+              threshold = Float::EPSILON * 10
               expect(a.row_size).to eql(b.row_size)
               expect(a.column_size).to eql(b.column_size)
               a.row_size.times{|i|
                 a.column_size.times{|j|
                   if b[i,j].kind_of?(Numeric) then
-                    expect(a[i,j]).to be_within(Float::EPSILON).of(b[i,j])
+                    expect(a[i,j]).to be_within(threshold).of(b[i,j])
                   else
                     expect(a[i,j]).to eql(nil)
                   end
