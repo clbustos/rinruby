@@ -601,10 +601,13 @@ def initialize(*args)
             var)
       } else if ( is.character(var) ) {
         if( length(var) == 1 ){
-          #{RinRuby_Env}$write(con, 
-              as.integer(#{RinRuby_Type_String}),
-              as.integer(nchar(var)),
-              var)
+          args <- list(con, as.integer(#{RinRuby_Type_String}))
+          if( is.na(var) ){
+            args <- c(args, as.integer(NA))
+          }else{
+            args <- c(args, as.integer(nchar(var)), var)
+          }
+          do.call(#{RinRuby_Env}$write, args)
         }else{
           #{RinRuby_Env}$write(con, 
               as.integer(#{RinRuby_Type_String_Array}),
@@ -733,9 +736,8 @@ def initialize(*args)
         result = socket.read(8 * length).unpack("D#{length}")
         (!singletons) && (length == 1) ? result[0] : result 
       when RinRuby_Type_String
-        result = socket.read(length)
-        socket.read(1) # zero-terminated string
-        result
+        # negative length means NA, and "+ 1" for zero-terminated string
+        (length >= 0) ? socket.read(length + 1)[0..-2] : nil
       when RinRuby_Type_String_Array
         Array.new(length){|i|
           pull_proc.call("#{var}[#{i+1}]", socket)

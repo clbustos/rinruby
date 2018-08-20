@@ -72,8 +72,12 @@ shared_examples 'RinRubyCore' do
     
     context "on pull" do
       it "should pull a String" do
-        subject.eval("x<-'Value'")
-        expect(subject.pull('x')).to eql('Value')
+        ['Value', ''].each{|v| # normal string and zero-length string
+          subject.eval("x<-'#{v}'")
+          expect(subject.pull('x')).to eql(v)
+        }
+        subject.eval("x<-as.character(NA)")
+        expect(subject.pull('x')).to eql(nil)
       end
       it "should pull an Integer" do
         [0x12345678, -0x12345678].each{|v| # for check endian, and range
@@ -101,7 +105,7 @@ shared_examples 'RinRubyCore' do
       end
       it "should pull an Array of String" do
         {
-          "c('a','b')" => ['a','b'], 
+          "c('a','b','',NA)" => ['a','b','',nil],
           "as.character(NULL)" => [],
         }.each{|k, v|
           subject.eval("x<-#{k}")
