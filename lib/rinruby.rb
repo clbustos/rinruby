@@ -660,7 +660,7 @@ def initialize(*args)
           when false; 0
           when nil; RinRuby_NA_R_Integer
           else; break false
-          end
+          end rescue break false # combination of Float::NAN and "case" flow invokes FloatDomainError
         }
       value = value_b
       RinRuby_Type_Boolean

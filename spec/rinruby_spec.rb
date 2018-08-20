@@ -90,6 +90,8 @@ shared_examples 'RinRubyCore' do
           subject.eval("x<-#{v}")
           expect(subject.pull('x')).to eql(v.to_f)
         }
+        subject.eval("x<-NaN")
+        expect(subject.pull('x').nan?).to be_truthy
       end
       it "should pull a Logical" do
         {:T => true, :F => false, :NA => nil}.each{|k, v|
@@ -106,10 +108,12 @@ shared_examples 'RinRubyCore' do
         expect(subject.pull('x')).to eql([1,2,-5,-3,nil])
       end
       it "should pull an Array of Float" do
-        subject.eval("x<-c(1.1,2.2,5,3)")
-        expect(subject.pull('x')).to eql([1.1,2.2,5.0,3.0])
-        subject.eval("x<-c(1L,2L,5L,3.0)") # numeric vector 
-        expect(subject.pull('x')).to eql([1.0,2.0,5.0,3.0])
+        subject.eval("x<-c(1.1,2.2,5,3,NaN)") # auto-conversion to numeric vector
+        expect(subject.pull('x')[0..-2]).to eql([1.1,2.2,5.0,3.0])
+        expect(subject.pull('x')[-1].nan?).to be_truthy
+        subject.eval("x<-c(1L,2L,5L,3.0,NaN)") # auto-conversion to numeric vector 
+        expect(subject.pull('x')[0..-2]).to eql([1.0,2.0,5.0,3.0])
+        expect(subject.pull('x')[-1].nan?).to be_truthy
       end
       it "should pull an Array of Logical" do
         subject.eval("x<-c(T, F, NA)")
@@ -166,6 +170,8 @@ shared_examples 'RinRubyCore' do
           subject.assign("x", x)
           expect(subject.pull('x')).to eql(x.to_f)
         }
+        subject.assign("x", Float::NAN)
+        expect(subject.pull('x').nan?).to be_truthy
       end
       it "should assign a Logical" do
         [true, false, nil].each{|x|
@@ -184,8 +190,9 @@ shared_examples 'RinRubyCore' do
         expect(subject.pull('x')).to eql(x)
       end
       it "should assign an Array of Float" do
-        subject.assign("x", [1.1, 2.2, 5, 3])
-        expect(subject.pull('x')).to eql([1.1,2.2,5.0,3.0])
+        subject.assign("x", [1.1, 2.2, 5, 3, Float::NAN])
+        expect(subject.pull('x')[0..-2]).to eql([1.1,2.2,5.0,3.0])
+        expect(subject.pull('x')[-1].nan?).to be_truthy
       end
       it "should assign an Array of Logical" do
         x = [true, false, nil]
