@@ -205,7 +205,7 @@ shared_examples 'RinRubyCore' do
         }
       end
       it "should assign an Array of String" do
-        x = ['a', 'b']
+        x = ['a', 'b', nil]
         subject.assign("x", x)
         expect(subject.pull('x')).to eql(x)
       end
@@ -215,8 +215,8 @@ shared_examples 'RinRubyCore' do
         expect(subject.pull('x')).to eql(x)
       end
       it "should assign an Array of Float" do
-        subject.assign("x", [1.1, 2.2, 5, 3, Float::NAN])
-        expect(subject.pull('x')[0..-2]).to eql([1.1,2.2,5.0,3.0])
+        subject.assign("x", [1.1, 2.2, 5, 3, nil, Float::NAN])
+        expect(subject.pull('x')[0..-2]).to eql([1.1,2.2,5.0,3.0, nil])
         expect(subject.pull('x')[-1].nan?).to be_truthy
       end
       it "should assign an Array of Logical" do
@@ -231,6 +231,10 @@ shared_examples 'RinRubyCore' do
             proc{rand(100000000)},
             proc{|a, b| expect(a).to eql(b)},
           ],
+          [ # integer matrix with NA
+            proc{v = rand(100000000); v > 50000000 ? nil : v},
+            proc{|a, b| expect(a).to eql(b)},
+          ],
           [ # float matrix
             proc{rand},
             proc{|a, b|
@@ -239,6 +243,22 @@ shared_examples 'RinRubyCore' do
               a.row_size.times{|i|
                 a.column_size.times{|j|
                   expect(a[i,j]).to be_within(Float::EPSILON).of(b[i,j])
+                }
+              }
+            },
+          ],
+          [ # float matrix with NA
+            proc{v = rand; v > 0.5 ? nil : v},
+            proc{|a, b|
+              expect(a.row_size).to eql(b.row_size)
+              expect(a.column_size).to eql(b.column_size)
+              a.row_size.times{|i|
+                a.column_size.times{|j|
+                  if b[i,j].kind_of?(Numeric) then
+                    expect(a[i,j]).to be_within(Float::EPSILON).of(b[i,j])
+                  else
+                    expect(a[i,j]).to eql(nil)
+                  end
                 }
               }
             },

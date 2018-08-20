@@ -564,11 +564,15 @@ def initialize(*args)
           for(i in 1:length){
             value[i] <- #{RinRuby_Env}$read(con, character, 1)
           }
-        } else {
-          value <-NULL
         }
         value
       })
+    }
+    #{RinRuby_Env}$get_value_with_NA <- function() {
+      NA_indices <- #{RinRuby_Env}$get_value() + 1L
+      value <- #{RinRuby_Env}$get_value()
+      value[NA_indices] <- NA
+      value
     }
     EOF
   end
@@ -650,10 +654,14 @@ def initialize(*args)
   def assign_engine(name, value)
     original_value = value
     
-    r_exp = "#{name} <- #{RinRuby_Env}$get_value()"
+    r_exp_get_value = "#{RinRuby_Env}$get_value()"
+    r_exp_proc = proc{"#{name} <- #{r_exp_get_value}"} # lazy evaluation
     
     if value.kind_of?(::Matrix) # assignment for matrices
-      r_exp = "#{name} <- matrix(#{RinRuby_Env}$get_value(), nrow=#{value.row_size}, ncol=#{value.column_size}, byrow=T)"
+      nrow, ncol = [value.row_size, value.column_size]
+      r_exp_proc = proc{
+        "#{name} <- matrix(#{r_exp_get_value}, nrow=#{nrow}, ncol=#{ncol}, byrow=T)"
+      }
       value = value.row_vectors.collect{|row| row.to_a}.flatten
     elsif !value.kind_of?(Array) then # check Array
       value = [value]
@@ -681,13 +689,13 @@ def initialize(*args)
           nils = []
           value_f = value.collect.with_index{|x, i|
             case x
-            when nil;     nils << i; Float::NAN
+            when nil;     nils << i; Float::NAN # nil check, temporary replacing to NaN
             when Numeric; x.to_f
             else;         break false
             end
           }
           next false unless value_f
-          nil_indices = nils
+          nil_indices = nils unless nils.empty?
           value = value_f
         }.call
       RinRuby_Type_Double
@@ -695,13 +703,13 @@ def initialize(*args)
           nils = []
           value_s = value.collect.with_index{|x, i|
             case x
-            when nil;     nils << i; nil
+            when nil;     nils << i; nil # nil check, temporary replacing to nil (socket.write(nil) without error)
             when String;   x.to_s
             else;          break false
             end
           }
           next false unless value_s
-          nil_indices = nils
+          nil_indices = nils unless nils.empty?
           value = value_s
         }.call
       RinRuby_Type_String_Array
@@ -710,8 +718,12 @@ def initialize(*args)
     end)
     
     socket_session{|socket|
-      @writer.puts(r_exp)
-      socket.write([type, value.size].pack('LL'))
+      if nil_indices # when nil appears in value
+        r_exp_get_value = "#{RinRuby_Env}$get_value_with_NA()"
+        socket.write(([RinRuby_Type_Integer, nil_indices.size] + nil_indices).pack("l#{nil_indices.size + 2}"))
+      end
+      @writer.puts(r_exp_proc.call)
+      socket.write([type, value.size].pack('ll'))
       case type
       when RinRuby_Type_String_Array
         value.each{|v|
