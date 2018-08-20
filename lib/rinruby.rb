@@ -599,15 +599,17 @@ def initialize(*args)
             as.integer(#{RinRuby_Type_Double}),
             as.integer(length(var)),
             var)
-      } else if ( is.character(var) && ( length(var) == 1 ) ) {
-        #{RinRuby_Env}$write(con, 
-            as.integer(#{RinRuby_Type_String}),
-            as.integer(nchar(var)),
-            var)
-      } else if ( is.character(var) && ( length(var) > 1 ) ) {
-        #{RinRuby_Env}$write(con, 
-            as.integer(#{RinRuby_Type_String_Array}),
-            as.integer(length(var)))
+      } else if ( is.character(var) ) {
+        if( length(var) == 1 ){
+          #{RinRuby_Env}$write(con, 
+              as.integer(#{RinRuby_Type_String}),
+              as.integer(nchar(var)),
+              var)
+        }else{
+          #{RinRuby_Env}$write(con, 
+              as.integer(#{RinRuby_Type_String_Array}),
+              as.integer(length(var)))
+        }
       } else {
         #{RinRuby_Env}$write(con, as.integer(#{RinRuby_Type_Unknown}))
       }

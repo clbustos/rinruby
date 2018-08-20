@@ -100,24 +100,43 @@ shared_examples 'RinRubyCore' do
         }
       end
       it "should pull an Array of String" do
-        subject.eval("x<-c('a','b')")
-        expect(subject.pull('x')).to eql(['a','b'])
+        {
+          "c('a','b')" => ['a','b'], 
+          "as.character(NULL)" => [],
+        }.each{|k, v|
+          subject.eval("x<-#{k}")
+          expect(subject.pull('x')).to eql(v)
+        }
       end
       it "should pull an Array of Integer" do
-        subject.eval("x<-c(1L,2L,-5L,-3L,NA)")
-        expect(subject.pull('x')).to eql([1,2,-5,-3,nil])
+        {
+          "c(1L,2L,-5L,-3L,NA)" => [1,2,-5,-3,nil], 
+          "as.integer(NULL)" => [],
+        }.each{|k, v|
+          subject.eval("x<-#{k}")
+          expect(subject.pull('x')).to eql(v)
+        }
       end
       it "should pull an Array of Float" do
         subject.eval("x<-c(1.1,2.2,5,3,NaN)") # auto-conversion to numeric vector
         expect(subject.pull('x')[0..-2]).to eql([1.1,2.2,5.0,3.0])
         expect(subject.pull('x')[-1].nan?).to be_truthy
+        
         subject.eval("x<-c(1L,2L,5L,3.0,NaN)") # auto-conversion to numeric vector 
         expect(subject.pull('x')[0..-2]).to eql([1.0,2.0,5.0,3.0])
         expect(subject.pull('x')[-1].nan?).to be_truthy
+        
+        subject.eval("x<-as.numeric(NULL)")
+        expect(subject.pull('x')).to eql([])
       end
       it "should pull an Array of Logical" do
-        subject.eval("x<-c(T, F, NA)")
-        expect(subject.pull('x')).to eql([true, false, nil])
+        {
+          "c(T, F, NA)" => [true, false, nil], 
+          "as.logical(NULL)" => [],
+        }.each{|k, v|
+          subject.eval("x<-#{k}")
+          expect(subject.pull('x')).to eql(v)
+        }
       end
 
       it "should pull a Matrix" do
