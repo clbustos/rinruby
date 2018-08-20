@@ -72,8 +72,12 @@ shared_examples 'RinRubyCore' do
     
     context "on pull" do
       it "should pull a String" do
-        subject.eval("x<-'Value'")
-        expect(subject.pull('x')).to eql('Value')
+        ['Value', ''].each{|v| # normal string and zero-length string
+          subject.eval("x<-'#{v}'")
+          expect(subject.pull('x')).to eql(v)
+        }
+        subject.eval("x<-as.character(NA)")
+        expect(subject.pull('x')).to eql(nil)
       end
       it "should pull an Integer" do
         [0x12345678, -0x12345678].each{|v| # for check endian, and range
@@ -90,30 +94,55 @@ shared_examples 'RinRubyCore' do
           subject.eval("x<-#{v}")
           expect(subject.pull('x')).to eql(v.to_f)
         }
+        subject.eval("x<-NaN")
+        expect(subject.pull('x').nan?).to be_truthy
+        subject.eval("x<-as.numeric(NA)")
+        expect(subject.pull('x')).to eql(nil)
       end
       it "should pull a Logical" do
-        {:T => true, :F => false}.each{|k, v|
+        {:T => true, :F => false, :NA => nil}.each{|k, v|
           subject.eval("x<-#{k}")
           expect(subject.pull('x')).to eql(v)
         }
       end
       it "should pull an Array of String" do
-        subject.eval("x<-c('a','b')")
-        expect(subject.pull('x')).to eql(['a','b'])
+        {
+          "c('a','b','',NA)" => ['a','b','',nil],
+          "as.character(NULL)" => [],
+        }.each{|k, v|
+          subject.eval("x<-#{k}")
+          expect(subject.pull('x')).to eql(v)
+        }
       end
       it "should pull an Array of Integer" do
-        subject.eval("x<-c(1L,2L,-5L,-3L)")
-        expect(subject.pull('x')).to eql([1,2,-5,-3])
+        {
+          "c(1L,2L,-5L,-3L,NA)" => [1,2,-5,-3,nil], 
+          "as.integer(NULL)" => [],
+        }.each{|k, v|
+          subject.eval("x<-#{k}")
+          expect(subject.pull('x')).to eql(v)
+        }
       end
       it "should pull an Array of Float" do
-        subject.eval("x<-c(1.1,2.2,5,3)")
-        expect(subject.pull('x')).to eql([1.1,2.2,5.0,3.0])
-        subject.eval("x<-c(1L,2L,5L,3.0)") # numeric vector 
-        expect(subject.pull('x')).to eql([1.0,2.0,5.0,3.0])
+        subject.eval("x<-c(1.1,2.2,5,3,NA,NaN)") # auto-conversion to numeric vector
+        expect(subject.pull('x')[0..-2]).to eql([1.1,2.2,5.0,3.0,nil])
+        expect(subject.pull('x')[-1].nan?).to be_truthy
+        
+        subject.eval("x<-c(1L,2L,5L,3.0,NA,NaN)") # auto-conversion to numeric vector 
+        expect(subject.pull('x')[0..-2]).to eql([1.0,2.0,5.0,3.0,nil])
+        expect(subject.pull('x')[-1].nan?).to be_truthy
+        
+        subject.eval("x<-as.numeric(NULL)")
+        expect(subject.pull('x')).to eql([])
       end
       it "should pull an Array of Logical" do
-        subject.eval("x<-c(T, F)")
-        expect(subject.pull('x')).to eql([true, false])
+        {
+          "c(T, F, NA)" => [true, false, nil], 
+          "as.logical(NULL)" => [],
+        }.each{|k, v|
+          subject.eval("x<-#{k}")
+          expect(subject.pull('x')).to eql(v)
+        }
       end
 
       it "should pull a Matrix" do
@@ -166,42 +195,81 @@ shared_examples 'RinRubyCore' do
           subject.assign("x", x)
           expect(subject.pull('x')).to eql(x.to_f)
         }
+        subject.assign("x", Float::NAN)
+        expect(subject.pull('x').nan?).to be_truthy
       end
       it "should assign a Logical" do
-        [true, false].each{|x|
+        [true, false, nil].each{|x|
           subject.assign("x", x)
           expect(subject.pull('x')).to eql(x)
         }
       end
       it "should assign an Array of String" do
-        x = ['a', 'b']
+        x = ['a', 'b', nil]
         subject.assign("x", x)
         expect(subject.pull('x')).to eql(x)
       end
       it "should assign an Array of Integer" do
-        x = [1, 2, -5, -3]
+        x = [1, 2, -5, -3, nil]
         subject.assign("x", x)
         expect(subject.pull('x')).to eql(x)
       end
       it "should assign an Array of Float" do
-        subject.assign("x", [1.1, 2.2, 5, 3])
-        expect(subject.pull('x')).to eql([1.1,2.2,5.0,3.0])
+        subject.assign("x", [1.1, 2.2, 5, 3, nil, Float::NAN])
+        expect(subject.pull('x')[0..-2]).to eql([1.1,2.2,5.0,3.0, nil])
+        expect(subject.pull('x')[-1].nan?).to be_truthy
       end
       it "should assign an Array of Logical" do
-        x = [true, false]
+        x = [true, false, nil]
         subject.assign("x", x)
         expect(subject.pull('x')).to eql(x)
       end
 
       it "should assign a Matrix" do
         [
-          proc{rand(100000000)}, # integer matrix
-          proc{rand}, # float matrix
-        ].each{|gen_proc|
+          [ # integer matrix
+            proc{rand(100000000)},
+            proc{|a, b| expect(a).to eql(b)},
+          ],
+          [ # integer matrix with NA
+            proc{v = rand(100000000); v > 50000000 ? nil : v},
+            proc{|a, b| expect(a).to eql(b)},
+          ],
+          [ # float matrix
+            proc{rand},
+            proc{|a, b|
+              threshold = Float::EPSILON * 10
+              expect(a.row_size).to eql(b.row_size)
+              expect(a.column_size).to eql(b.column_size)
+              a.row_size.times{|i|
+                a.column_size.times{|j|
+                  expect(a[i,j]).to be_within(threshold).of(b[i,j])
+                }
+              }
+            },
+          ],
+          [ # float matrix with NA
+            proc{v = rand; v > 0.5 ? nil : v},
+            proc{|a, b|
+              threshold = Float::EPSILON * 10
+              expect(a.row_size).to eql(b.row_size)
+              expect(a.column_size).to eql(b.column_size)
+              a.row_size.times{|i|
+                a.column_size.times{|j|
+                  if b[i,j].kind_of?(Numeric) then
+                    expect(a[i,j]).to be_within(threshold).of(b[i,j])
+                  else
+                    expect(a[i,j]).to eql(nil)
+                  end
+                }
+              }
+            },
+          ],
+        ].each{|gen_proc, cmp_proc|
           x = Matrix::build(100, 200){|i, j| gen_proc.call} # 100 x 200 matrix
           subject.assign("x", x)
-          expect(subject.pull('x')).to eql(x)
-        }
+          cmp_proc.call(subject.pull('x'), x)
+        }        
       end
       
       it "should be the same using assign than R#= methods" do
