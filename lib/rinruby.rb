@@ -553,26 +553,26 @@ def initialize(*args)
         value <- NULL
         type <- #{RinRuby_Env}$read(con, integer, 1)
         length <- #{RinRuby_Env}$read(con, integer, 1)
+        na.indices <- function(){
+          #{RinRuby_Env}$read(con, integer, 
+              #{RinRuby_Env}$read(con, integer, 1)) + 1L
+        }
         if ( type == #{RinRuby_Type_Boolean} ) {
           value <- #{RinRuby_Env}$read(con, logical, length)
         } else if ( type == #{RinRuby_Type_Integer} ) {
           value <- #{RinRuby_Env}$read(con, integer, length)
         } else if ( type == #{RinRuby_Type_Double} ) {
           value <- #{RinRuby_Env}$read(con, numeric, length)
+          value[na.indices()] <- NA
         } else if ( type == #{RinRuby_Type_String_Array} ) {
           value <- character(length)
           for(i in 1:length){
             value[i] <- #{RinRuby_Env}$read(con, character, 1)
           }
+          value[na.indices()] <- NA
         }
         value
       })
-    }
-    #{RinRuby_Env}$get_value_with_NA <- function() {
-      NA_indices <- #{RinRuby_Env}$get_value() + 1L
-      value <- #{RinRuby_Env}$get_value()
-      value[NA_indices] <- NA
-      value
     }
     EOF
   end
@@ -654,20 +654,16 @@ def initialize(*args)
   def assign_engine(name, value)
     original_value = value
     
-    r_exp_get_value = "#{RinRuby_Env}$get_value()"
-    r_exp_proc = proc{"#{name} <- #{r_exp_get_value}"} # lazy evaluation
+    r_exp = "#{name} <- #{RinRuby_Env}$get_value()"
     
     if value.kind_of?(::Matrix) # assignment for matrices
-      nrow, ncol = [value.row_size, value.column_size]
-      r_exp_proc = proc{
-        "#{name} <- matrix(#{r_exp_get_value}, nrow=#{nrow}, ncol=#{ncol}, byrow=T)"
-      }
+      r_exp = "#{name} <- matrix(#{RinRuby_Env}$get_value(), nrow=#{value.row_size}, ncol=#{value.column_size}, byrow=T)"
       value = value.row_vectors.collect{|row| row.to_a}.flatten
     elsif !value.kind_of?(Array) then # check Array
       value = [value]
     end
     
-    nil_indices = nil
+    serialized = nil
     type = (if value_b = value.collect{|x| # check Boolean (=> logical)
           case x
           when true;  1
@@ -676,14 +672,16 @@ def initialize(*args)
           else;       break false
           end rescue break false # combination of Float::NAN and "case" flow invokes FloatDomainError
         }
-      value = value_b
+      # Boolean format: size, data, ...
+      serialized = [value_b.size].pack('l') + value_b.pack('l*')
       RinRuby_Type_Boolean
     elsif value_i = value.collect{|x| # check Integer (=> integer)
           next RinRuby_NA_R_Integer if x == nil
           next x if x.kind_of?(Integer) && (x >= RinRuby_Min_R_Integer) && (x <= RinRuby_Max_R_Integer)
           break false
         }
-      value = value_i
+      # Integer format: size, data, ...
+      serialized = [value_i.size].pack('l') + value_i.pack('l*')
       RinRuby_Type_Integer
     elsif proc{ # check Float (=> numeric)
           nils = []
@@ -695,22 +693,25 @@ def initialize(*args)
             end
           }
           next false unless value_f
-          nil_indices = nils unless nils.empty?
-          value = value_f
+          # Float format: data_size, data, ..., na_index_size, na_index, ...
+          serialized = [value_f.size].pack('l') + value_f.pack('D*') \
+              + ([nils.size] + nils).pack('l*')
         }.call
       RinRuby_Type_Double
     elsif proc{ # check String (=> character)
           nils = []
           value_s = value.collect.with_index{|x, i|
             case x
-            when nil;     nils << i; nil # nil check, temporary replacing to nil (socket.write(nil) without error)
+            when nil;     nils << i; '' # nil check, temporary replacing to empty String
             when String;   x.to_s
             else;          break false
             end
           }
           next false unless value_s
-          nil_indices = nils unless nils.empty?
-          value = value_s
+          # String format: data_size, data, ..., na_index_size, na_index, ...
+          serialized = [value_s.size].pack('l') + value_s.collect{|v|
+            v + [0].pack('C') # zero-terminated strings
+          }.join + ([nils.size] + nils).pack('l*')
         }.call
       RinRuby_Type_String_Array
     else
@@ -718,21 +719,9 @@ def initialize(*args)
     end)
     
     socket_session{|socket|
-      if nil_indices # when nil appears in value
-        r_exp_get_value = "#{RinRuby_Env}$get_value_with_NA()"
-        socket.write(([RinRuby_Type_Integer, nil_indices.size] + nil_indices).pack("l#{nil_indices.size + 2}"))
-      end
-      @writer.puts(r_exp_proc.call)
-      socket.write([type, value.size].pack('ll'))
-      case type
-      when RinRuby_Type_String_Array
-        value.each{|v|
-          socket.write(v)
-          socket.write([0].pack('C')) # zero-terminated strings
-        }
-      else
-        socket.write(value.pack("#{(type == RinRuby_Type_Double) ? 'D' : 'l'}#{value.size}"))
-      end
+      @writer.puts(r_exp)
+      socket.write([type].pack('l'))
+      socket.write(serialized)
     }
     
     original_value
