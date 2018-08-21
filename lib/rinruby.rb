@@ -566,6 +566,9 @@ def initialize(*args)
         } else if ( type == #{RinRuby_Type_Double} ) {
           value <- #{RinRuby_Env}$read(con, numeric, length)
           value[na.indices()] <- NA
+        } else if ( type == #{RinRuby_Type_Complex} ) {
+          value <- #{RinRuby_Env}$read(con, complex, length)
+          value[na.indices()] <- NA
         } else if ( type == #{RinRuby_Type_String_Array} ) {
           value <- character(length)
           for(i in 1:length){
@@ -695,6 +698,7 @@ def initialize(*args)
           value_f = value.collect.with_index{|x, i|
             case x
             when nil;     nils << i; Float::NAN # nil check, temporary replacing to NaN
+            when Complex; break false # guard for successful Complex(rl, 0).to_f; Complex(rl, 0.0) fails
             when Numeric; x.to_f
             else;         break false
             end
@@ -705,6 +709,22 @@ def initialize(*args)
               + ([nils.size] + nils).pack('l*')
         }.call
       RinRuby_Type_Double
+    elsif proc{ # check Complex (=> complex)
+          nils = []
+          value_c = value.collect.with_index{|x, i|
+            case x
+            when nil;     nils << i; [Float::NAN, 0] # nil check, temporary replacing to NaN
+            when Complex; [x.real, x.imag]
+            when Numeric; [x.to_f, 0]
+            else;         break false
+            end
+          }
+          next false unless value_c
+          # Complex format: data_size, data, ..., na_index_size, na_index, ...
+          serialized = [value_c.size].pack('l') + value_c.flatten.pack('D*') \
+              + ([nils.size] + nils).pack('l*')
+        }.call
+      RinRuby_Type_Complex
     elsif proc{ # check String (=> character)
           nils = []
           value_s = value.collect.with_index{|x, i|
