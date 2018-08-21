@@ -126,10 +126,16 @@ shared_examples 'RinRubyCore' do
           subject.eval("x<-#{k}")
           expect(subject.pull('x')).to eql(v)
         }
+        # Up to R versions 3.2.x, all forms of NA and NaN were coerced to a complex NA
+        # @see https://stat.ethz.ch/R-manual/R-devel/library/base/html/complex.html
         subject.eval("x<-as.complex(NaN)")
-        expect(subject.pull('x').kind_of?(Complex)).to be_truthy
-        expect(subject.pull('x').real.nan?).to be_truthy
-        expect(subject.pull('x').imag).to eql(0.0)
+        if subject.pull("paste(version$major, version$minor, sep='.')").match(/^ *\d+\.\d+/)[0].to_f >= 3.3
+          expect(subject.pull('x').kind_of?(Complex)).to be_truthy
+          expect(subject.pull('x').real.nan?).to be_truthy
+          expect(subject.pull('x').imag).to eql(0.0)
+        else
+          expect(subject.pull('x')).to eql(nil) # interpreted as (x <- NA)
+        end
         subject.eval("x<-complex(real=NaN, imag=NaN)")
         expect(subject.pull('x').kind_of?(Complex)).to be_truthy
         expect(subject.pull('x').real.nan?).to be_truthy
