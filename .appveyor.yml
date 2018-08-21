@@ -1,0 +1,36 @@
+version: 1.0.{build}.{branch}
+
+environment:
+  matrix:
+    - ruby_version: 25
+      r_version: 3.5.1
+    - ruby_version: 25
+      r_version: 3.2.5
+    - ruby_version: 24
+      r_version: 3.5.1
+    - ruby_version: 21
+      r_version: 3.5.1
+
+install:
+  - set PATH=C:\Ruby%ruby_version%\bin;%PATH%
+  - bundle install
+  - cmd: >-
+      SET r_installer=C:\R-%r_version%-win.exe
+
+      echo R installer is %r_installer%
+
+      SET r_archive=https://cran.r-project.org/bin/windows/base
+
+      appveyor DownloadFile %r_archive%/R-%r_version%-win.exe -FileName %r_installer% || appveyor DownloadFile %r_archive%/old/%r_version%/R-%r_version%-win.exe -FileName %r_installer%
+
+      echo Installing %r_installer% ... && %r_installer% /SILENT /DIR="C:\R-%r_version%"
+
+build: off
+
+before_test:
+  - ruby -v
+  - gem -v
+  - bundle -v
+
+test_script:
+  - bundle exec rspec
