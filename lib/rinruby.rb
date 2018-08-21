@@ -58,6 +58,7 @@
 #
 #The files "java" and "readline" are used when available to add functionality.
 require 'matrix'
+require 'complex'
 class RinRuby
 
   require 'socket'
@@ -496,6 +497,7 @@ def initialize(*args)
     :Boolean,
     :Integer,
     :Double,
+    :Complex,
     :String,
     :String_Array,
     :Matrix,
@@ -601,6 +603,11 @@ def initialize(*args)
       } else if ( is.double(var) ) {
         #{RinRuby_Env}$write(con,
             as.integer(#{RinRuby_Type_Double}),
+            as.integer(length(var)),
+            var)
+      } else if ( is.complex(var) ) {
+        #{RinRuby_Env}$write(con,
+            as.integer(#{RinRuby_Type_Complex}),
             as.integer(length(var)),
             var)
       } else if ( is.character(var) ) {
@@ -728,6 +735,13 @@ def initialize(*args)
   end
 
   def pull_engine(string, singletons = true)
+    pull_nil_proc = proc{|var, socket, values|
+      # check NA; caution is.na(c(NA, NaN)) => c(T, T), is.nan(c(NA, NaN)) => c(F, T) 
+      @writer.puts "#{RinRuby_Env}$pull(which(is.na(#{var} & (!is.nan(#{var})))) - 1L)"
+      na_indices = socket.read(8).unpack('ll')[1]
+      socket.read(4 * na_indices).unpack("l*").each{|i| values[i] = nil}
+      values
+    }
     pull_proc = proc{|var, socket|
       @writer.puts "#{RinRuby_Env}$pull(try(#{var}))"  
       type = socket.read(4).unpack('l').first
@@ -741,24 +755,26 @@ def initialize(*args)
   
       case type
       when RinRuby_Type_Boolean
-        result = socket.read(4 * length).unpack("l#{length}").collect{|v|
+        result = socket.read(4 * length).unpack("l*").collect{|v|
           (v == RinRuby_NA_R_Integer) ? nil : (v > 0)
         }
         (!singletons) && (length == 1) ? result[0] : result
       when RinRuby_Type_Integer
-        result = socket.read(4 * length).unpack("l#{length}").collect{|v|
+        result = socket.read(4 * length).unpack("l*").collect{|v|
           (v == RinRuby_NA_R_Integer) ? nil : v
         }
         (!singletons) && (length == 1) ? result[0] : result
       when RinRuby_Type_Double
-        result = socket.read(8 * length).unpack("D#{length}")
-        
-        # check NA; caution is.na(c(NA, NaN)) => c(T, T), is.nan(c(NA, NaN)) => c(F, T) 
-        @writer.puts "#{RinRuby_Env}$pull(which(is.na(#{var} & (!is.nan(#{var})))) - 1L)"
-        na_indices = socket.read(8).unpack('ll')[1]
-        socket.read(4 * na_indices).unpack("l#{na_indices}").each{|i| result[i] = nil}
-        
-        (!singletons) && (length == 1) ? result[0] : result 
+        result = pull_nil_proc.call(
+            var, socket, 
+            socket.read(8 * length).unpack("D*"))
+        (!singletons) && (length == 1) ? result[0] : result
+      when RinRuby_Type_Complex
+        result = pull_nil_proc.call(
+            var, socket, 
+            socket.read(8 * 2 * length).unpack("D*").each_slice(2).collect{|vr, vi| Complex(vr, vi)})
+        # writeBin(compex, ...) on R results in real(1), imag(1), real(2), imag(2), ... with double precision
+        (!singletons) && (length == 1) ? result[0] : result
       when RinRuby_Type_String
         # negative length means NA, and "+ 1" for zero-terminated string
         (length >= 0) ? socket.read(length + 1)[0..-2] : nil
