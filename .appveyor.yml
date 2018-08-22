@@ -34,3 +34,13 @@ before_test:
 
 test_script:
   - bundle exec rspec
+
+after_test:
+  - cmd: >-
+      type nul > %APPVEYOR_REPO_COMMIT%.commit
+
+      7z a coverage.%APPVEYOR_REPO_BRANCH%.zip %APPVEYOR_BUILD_FOLDER%\coverage %APPVEYOR_REPO_COMMIT%.commit
+
+artifacts:
+  - path: coverage.*.zip
+    name: Coverage measured by simplecov
