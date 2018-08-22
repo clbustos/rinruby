@@ -521,12 +521,20 @@ def initialize(*args)
       #{RinRuby_Env}$session <- function(f){
         invisible(f(#{RinRuby_Socket}))
       }
-      #{RinRuby_Env}$write <- function(con, v, ...){
-        invisible(lapply(list(v, ...), function(v2){
-            writeBin(v2, con, endian="#{RinRuby_Endian}")}))
+      #{RinRuby_Env}$session.write <- function(writer){
+        #{RinRuby_Env}$session(function(con){
+          writer(function(v, ...){
+            invisible(lapply(list(v, ...), function(v2){
+                writeBin(v2, con, endian="#{RinRuby_Endian}")}))
+          })
+        })
       }
-      #{RinRuby_Env}$read <- function(con, vtype, len){
-        invisible(readBin(con, vtype(), len, endian="#{RinRuby_Endian}"))
+      #{RinRuby_Env}$session.read <- function(reader){
+        #{RinRuby_Env}$session(function(con){
+          reader(function(vtype, len){
+            invisible(readBin(con, vtype(), len, endian="#{RinRuby_Endian}"))
+          })
+        })
       }
     EOF
   end
@@ -534,13 +542,8 @@ def initialize(*args)
   def r_rinruby_parseable
     @writer.puts <<-EOF
     #{RinRuby_Env}$parseable <- function(var) {
-      #{RinRuby_Env}$session(function(con){
-        result=try(parse(text=var),TRUE)
-        if(inherits(result, "try-error")) {
-          #{RinRuby_Env}$write(con, as.integer(-1))
-        } else {
-          #{RinRuby_Env}$write(con, as.integer(1))
-        }
+      #{RinRuby_Env}$session.write(function(write){
+        write(ifelse(inherits(try(parse(text=var), TRUE), "try-error"), -1L, 1L))
       })
     }
     EOF
@@ -549,25 +552,24 @@ def initialize(*args)
   def r_rinruby_get_value
     @writer.puts <<-EOF
     #{RinRuby_Env}$get_value <- function() {
-      #{RinRuby_Env}$session(function(con){
+      #{RinRuby_Env}$session.read(function(read){
         value <- NULL
-        type <- #{RinRuby_Env}$read(con, integer, 1)
-        length <- #{RinRuby_Env}$read(con, integer, 1)
+        type <- read(integer, 1)
+        length <- read(integer, 1)
         na.indices <- function(){
-          #{RinRuby_Env}$read(con, integer, 
-              #{RinRuby_Env}$read(con, integer, 1)) + 1L
+          read(integer, read(integer, 1)) + 1L
         }
         if ( type == #{RinRuby_Type_Boolean} ) {
-          value <- #{RinRuby_Env}$read(con, logical, length)
+          value <- read(logical, length)
         } else if ( type == #{RinRuby_Type_Integer} ) {
-          value <- #{RinRuby_Env}$read(con, integer, length)
+          value <- read(integer, length)
         } else if ( type == #{RinRuby_Type_Double} ) {
-          value <- #{RinRuby_Env}$read(con, numeric, length)
+          value <- read(numeric, length)
           value[na.indices()] <- NA
         } else if ( type == #{RinRuby_Type_String_Array} ) {
           value <- character(length)
           for(i in 1:length){
-            value[i] <- #{RinRuby_Env}$read(con, character, 1)
+            value[i] <- read(character, 1)
           }
           value[na.indices()] <- NA
         }
@@ -580,45 +582,30 @@ def initialize(*args)
   def r_rinruby_pull
     @writer.puts <<-EOF
 #{RinRuby_Env}$pull <- function(var){
-  #{RinRuby_Env}$session(function(con){
+  #{RinRuby_Env}$session.write(function(write){
     if ( inherits(var ,"try-error") ) {
-      #{RinRuby_Env}$write(con, as.integer(#{RinRuby_Type_NotFound}))
+      write(#{RinRuby_Type_NotFound}L)
     } else {
       if (is.matrix(var)) {
-        #{RinRuby_Env}$write(con,
-            as.integer(#{RinRuby_Type_Matrix}),
-            as.integer(dim(var)[1]))
+        write(#{RinRuby_Type_Matrix}L, nrow(var))
       } else if ( is.logical(var) ) {
-        #{RinRuby_Env}$write(con, 
-            as.integer(#{RinRuby_Type_Boolean}),
-            as.integer(length(var)),
-            as.integer(var))
+        write(#{RinRuby_Type_Boolean}L, length(var), as.integer(var))
       } else if ( is.integer(var) ) {
-        #{RinRuby_Env}$write(con, 
-            as.integer(#{RinRuby_Type_Integer}),
-            as.integer(length(var)),
-            var)
+        write(#{RinRuby_Type_Integer}L, length(var), var)
       } else if ( is.double(var) ) {
-        #{RinRuby_Env}$write(con,
-            as.integer(#{RinRuby_Type_Double}),
-            as.integer(length(var)),
-            var)
+        write(#{RinRuby_Type_Double}L, length(var), var)
       } else if ( is.character(var) ) {
         if( length(var) == 1 ){
-          args <- list(con, as.integer(#{RinRuby_Type_String}))
           if( is.na(var) ){
-            args <- c(args, as.integer(NA))
+            write(#{RinRuby_Type_String}L, as.integer(NA))
           }else{
-            args <- c(args, as.integer(nchar(var)), var)
+            write(#{RinRuby_Type_String}L, nchar(var), var)
           }
-          do.call(#{RinRuby_Env}$write, args)
         }else{
-          #{RinRuby_Env}$write(con, 
-              as.integer(#{RinRuby_Type_String_Array}),
-              as.integer(length(var)))
+          write(#{RinRuby_Type_String_Array}L, length(var))
         }
       } else {
-        #{RinRuby_Env}$write(con, as.integer(#{RinRuby_Type_Unknown}))
+        write(#{RinRuby_Type_Unknown}L)
       }
     }
   })
@@ -728,6 +715,13 @@ def initialize(*args)
   end
 
   def pull_engine(string, singletons = true)
+    pull_nil_proc = proc{|var, socket, values|
+      # check NA; caution is.na(c(NA, NaN)) => c(T, T), is.nan(c(NA, NaN)) => c(F, T) 
+      @writer.puts "#{RinRuby_Env}$pull(which(is.na(#{var} & (!is.nan(#{var})))) - 1L)"
+      na_indices = socket.read(8).unpack('ll')[1]
+      socket.read(4 * na_indices).unpack("l*").each{|i| values[i] = nil}
+      values
+    }
     pull_proc = proc{|var, socket|
       @writer.puts "#{RinRuby_Env}$pull(try(#{var}))"  
       type = socket.read(4).unpack('l').first
@@ -741,24 +735,20 @@ def initialize(*args)
   
       case type
       when RinRuby_Type_Boolean
-        result = socket.read(4 * length).unpack("l#{length}").collect{|v|
+        result = socket.read(4 * length).unpack("l*").collect{|v|
           (v == RinRuby_NA_R_Integer) ? nil : (v > 0)
         }
         (!singletons) && (length == 1) ? result[0] : result
       when RinRuby_Type_Integer
-        result = socket.read(4 * length).unpack("l#{length}").collect{|v|
+        result = socket.read(4 * length).unpack("l*").collect{|v|
           (v == RinRuby_NA_R_Integer) ? nil : v
         }
         (!singletons) && (length == 1) ? result[0] : result
       when RinRuby_Type_Double
-        result = socket.read(8 * length).unpack("D#{length}")
-        
-        # check NA; caution is.na(c(NA, NaN)) => c(T, T), is.nan(c(NA, NaN)) => c(F, T) 
-        @writer.puts "#{RinRuby_Env}$pull(which(is.na(#{var} & (!is.nan(#{var})))) - 1L)"
-        na_indices = socket.read(8).unpack('ll')[1]
-        socket.read(4 * na_indices).unpack("l#{na_indices}").each{|i| result[i] = nil}
-        
-        (!singletons) && (length == 1) ? result[0] : result 
+        result = pull_nil_proc.call(
+            var, socket, 
+            socket.read(8 * length).unpack("D*"))
+        (!singletons) && (length == 1) ? result[0] : result
       when RinRuby_Type_String
         # negative length means NA, and "+ 1" for zero-terminated string
         (length >= 0) ? socket.read(length + 1)[0..-2] : nil
