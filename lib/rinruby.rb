@@ -644,7 +644,133 @@ def initialize(*args)
     end
     res
   end
-
+  
+  class R_DataType
+    class <<self
+      def convertable?(value)
+        false
+      end
+      def ===(value)
+        convertable?(value)
+      end
+      def send(value, io)
+        nil
+      end
+    end
+  end
+  
+  class R_Logical < R_DataType
+    CONVERT_TABLE = Hash[*({
+          true => 1,
+          false => 0, 
+          nil => RinRuby_NA_R_Integer,
+        }.collect{|k, v|
+          [k, [v].pack('l')]
+        }.flatten)]
+    class <<self
+      def convertable?(value)
+        value.all?{|x| [true, false, nil].include?(x)}
+      end
+      def send(value, io)
+        io.write([RinRuby_Type_Boolean, value.size].pack('l*'))
+        value.each{|x|
+          io.write(CONVERT_TABLE[x])
+        }
+      end
+    end
+  end
+  
+  class R_Integer < R_DataType
+    class <<self
+      def convertable?(value)
+        value.all?{|x|
+          (x == nil) ||
+              (x.kind_of?(Integer) && (x >= RinRuby_Min_R_Integer) && (x <= RinRuby_Max_R_Integer))
+        }
+      end
+      def send(value, io)
+        io.write([RinRuby_Type_Integer, value.size].pack('l*'))
+        value.each{|x|
+          io.write([(x == nil) ? RinRuby_NA_R_Integer : x].pack('l'))
+        }
+      end
+    end
+  end
+  
+  class R_Float < R_DataType
+    class <<self
+      def convertable?(value)
+        value.all?{|x|
+          (x == nil) || (x.kind_of?(Numeric) && (!x.kind_of?(Complex)))
+        }
+      end
+      def send(value, io)
+        io.write([RinRuby_Type_Double, value.size].pack('l*'))
+        nils = []
+        value.each.with_index{|x, i|
+          if x == nil then
+            nils << i
+            io.write([Float::NAN].pack('D'))
+          else
+            io.write([x.to_f].pack('D'))
+          end
+        }
+        io.write(([nils.size] + nils).pack('l*'))
+        value
+      end
+    end
+  end
+  
+  class R_Complex < R_DataType
+    class <<self
+      def convertable?(value)
+        value.all?{|x|
+          (x == nil) || x.kind_of?(Numeric)
+        }
+      end
+      def send(value, io)
+        io.write([RinRuby_Type_Complex, value.size].pack('l*'))
+        nils = []
+        value.each.with_index{|x, i|
+          if x == nil then
+            nils << i
+            io.write([Float::NAN, 0].pack('D*'))
+          elsif x.kind_of?(Complex) then
+            io.write([x.real, x.imag].pack('D*'))
+          else
+            io.write([x.to_f, 0].pack('D*'))
+          end
+        }
+        io.write(([nils.size] + nils).pack('l*'))
+        value
+      end
+    end
+  end
+  
+  class R_String < R_DataType
+    class <<self
+      def convertable?(value)
+        value.all?{|x|
+          (x == nil) || x.kind_of?(String)
+        }
+      end
+      def send(value, io)
+        io.write([RinRuby_Type_String_Array, value.size].pack('l*'))
+        nils = []
+        value.each.with_index{|x, i|
+          io.write(if x == nil then
+            nils << i
+            ''
+          else
+            x.to_s
+          end + [0].pack('C'))
+        }
+        io.write(([nils.size] + nils).pack('l*'))
+        value
+      end
+    end
+  end
+  
   def assign_engine(name, value)
     original_value = value
     
@@ -657,84 +783,21 @@ def initialize(*args)
       value = [value]
     end
     
-    serialized = nil
-    type = (if value_b = value.collect{|x| # check Boolean (=> logical)
-          case x
-          when true;  1
-          when false; 0
-          when nil;   RinRuby_NA_R_Integer
-          else;       break false
-          end rescue break false # combination of Float::NAN and "case" flow invokes FloatDomainError
-        }
-      # Boolean format: size, data, ...
-      serialized = [value_b.size].pack('l') + value_b.pack('l*')
-      RinRuby_Type_Boolean
-    elsif value_i = value.collect{|x| # check Integer (=> integer)
-          next RinRuby_NA_R_Integer if x == nil
-          next x if x.kind_of?(Integer) && (x >= RinRuby_Min_R_Integer) && (x <= RinRuby_Max_R_Integer)
-          break false
-        }
-      # Integer format: size, data, ...
-      serialized = [value_i.size].pack('l') + value_i.pack('l*')
-      RinRuby_Type_Integer
-    elsif proc{ # check Float (=> numeric)
-          nils = []
-          value_f = value.collect.with_index{|x, i|
-            case x
-            when nil;     nils << i; Float::NAN # nil check, temporary replacing to NaN
-            when Complex; break false # guard for successful Complex(rl, 0).to_f; Complex(rl, 0.0) fails
-            when Numeric; x.to_f
-            else;         break false
-            end
-          }
-          next false unless value_f
-          # Float format: data_size, data, ..., na_index_size, na_index, ...
-          serialized = [value_f.size].pack('l') + value_f.pack('D*') \
-              + ([nils.size] + nils).pack('l*')
-        }.call
-      RinRuby_Type_Double
-    elsif proc{ # check Complex (=> complex)
-          nils = []
-          value_c = value.collect.with_index{|x, i|
-            case x
-            when nil;     nils << i; [Float::NAN, 0] # nil check, temporary replacing to NaN
-            when Complex; [x.real, x.imag]
-            when Numeric; [x.to_f, 0]
-            else;         break false
-            end
-          }
-          next false unless value_c
-          # Complex format: data_size, data, ..., na_index_size, na_index, ...
-          serialized = [value_c.size].pack('l') + value_c.flatten.pack('D*') \
-              + ([nils.size] + nils).pack('l*')
-        }.call
-      RinRuby_Type_Complex
-    elsif proc{ # check String (=> character)
-          nils = []
-          value_s = value.collect.with_index{|x, i|
-            case x
-            when nil;     nils << i; '' # nil check, temporary replacing to empty String
-            when String;   x.to_s
-            else;          break false
-            end
-          }
-          next false unless value_s
-          # String format: data_size, data, ..., na_index_size, na_index, ...
-          serialized = [value_s.size].pack('l') + value_s.collect{|v|
-            v + [0].pack('C') # zero-terminated strings
-          }.join + ([nils.size] + nils).pack('l*')
-        }.call
-      RinRuby_Type_String_Array
-    else
-      raise "Unsupported data type on Ruby's end"
-    end)
+    r_type = [
+      R_Logical,
+      R_Integer,
+      R_Float,
+      R_Complex,
+      R_String,
+    ].find{|test|
+      test === value
+    }
+    raise "Unsupported data type on Ruby's end" unless r_type
     
     socket_session{|socket|
       @writer.puts(r_exp)
-      socket.write([type].pack('l'))
-      socket.write(serialized)
+      r_type.send(value, socket)
     }
-    
     original_value
   end
 
