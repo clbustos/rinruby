@@ -496,8 +496,7 @@ def initialize(*args)
     :Boolean,
     :Integer,
     :Double,
-    :String,
-    :String_Array,
+    :Character,
     :Matrix,
   ].each_with_index{|type, i|
     eval("RinRuby_Type_#{type} = i")
@@ -566,10 +565,10 @@ def initialize(*args)
         } else if ( type == #{RinRuby_Type_Double} ) {
           value <- read(numeric, length)
           value[na.indices()] <- NA
-        } else if ( type == #{RinRuby_Type_String_Array} ) {
+        } else if ( type == #{RinRuby_Type_Character} ) {
           value <- character(length)
-          for(i in 1:length){
-            value[i] <- read(character, 1)
+          for(i in seq_len(length)){
+            value[[i]] <- read(character, 1)
           }
           value[na.indices()] <- NA
         }
@@ -595,14 +594,13 @@ def initialize(*args)
       } else if ( is.double(var) ) {
         write(#{RinRuby_Type_Double}L, length(var), var)
       } else if ( is.character(var) ) {
-        if( length(var) == 1 ){
-          if( is.na(var) ){
-            write(#{RinRuby_Type_String}L, as.integer(NA))
+        write(#{RinRuby_Type_Character}L, length(var))
+        for(i in var){
+          if( is.na(i) ){
+            write(as.integer(NA))
           }else{
-            write(#{RinRuby_Type_String}L, nchar(var), var)
+            write(nchar(i), i)
           }
-        }else{
-          write(#{RinRuby_Type_String_Array}L, length(var))
         }
       } else {
         write(#{RinRuby_Type_Unknown}L)
@@ -758,7 +756,7 @@ def initialize(*args)
       [R_Logical,   RinRuby_Type_Boolean],
       [R_Integer,   RinRuby_Type_Integer],
       [R_Numeric,   RinRuby_Type_Double],
-      [R_Character, RinRuby_Type_String_Array],
+      [R_Character, RinRuby_Type_Character],
     ].find{|k, i|
       k === value
     }
@@ -808,13 +806,13 @@ def initialize(*args)
             var, socket, 
             socket.read(8 * length).unpack("D*"))
         (!singletons) && (length == 1) ? result[0] : result
-      when RinRuby_Type_String
-        # negative length means NA, and "+ 1" for zero-terminated string
-        (length >= 0) ? socket.read(length + 1)[0..-2] : nil
-      when RinRuby_Type_String_Array
-        Array.new(length){|i|
-          pull_proc.call("#{var}[#{i+1}]", socket)
+      when RinRuby_Type_Character
+        result = Array.new(length){|i|
+          nchar = socket.read(4).unpack('l')[0]
+          # negative nchar means NA, and "+ 1" for zero-terminated string
+          (nchar >= 0) ? socket.read(nchar + 1)[0..-2] : nil
         }
+        (!singletons) && (length == 1) ? result[0] : result
       when RinRuby_Type_Matrix
         Matrix.rows(length.times.collect{|i|
           pull_proc.call("#{var}[#{i+1},]", socket)
