@@ -173,7 +173,7 @@ def initialize(*args)
     r_rinruby_socket_io
     r_rinruby_get_value
     r_rinruby_pull
-    r_rinruby_parseable
+    r_rinruby_check
     echo(nil,true) if @platform =~ /.*-java/      # Redirect error messages on the Java platform
   end
 
@@ -538,11 +538,20 @@ def initialize(*args)
     EOF
   end
   
-  def r_rinruby_parseable
+  def r_rinruby_check
     @writer.puts <<-EOF
     #{RinRuby_Env}$parseable <- function(var) {
       #{RinRuby_Env}$session.write(function(write){
-        write(ifelse(inherits(try(parse(text=var), TRUE), "try-error"), -1L, 1L))
+        write(ifelse(inherits(try(
+            parse(text=var), 
+            silent=TRUE), "try-error"), 0L, 1L))
+      })
+    }
+    #{RinRuby_Env}$assignable <- function(var) {
+      #{RinRuby_Env}$session.write(function(write){
+        write(ifelse(inherits(try(
+            eval(parse(text=paste(var, '<- 1'))),
+            silent=TRUE), "try-error"), 0L, 1L))
       })
     }
     EOF
@@ -828,29 +837,23 @@ def initialize(*args)
 
   def complete?(string)
     assign_engine(RinRuby_Parse_String, string)
-    result = socket_session{|socket|
+    socket_session{|socket|
       @writer.puts "#{RinRuby_Env}$parseable(#{RinRuby_Parse_String})"
-      socket.read(4).unpack('l').first
+      socket.read(4).unpack('l').first > 0
     }
-    return result==-1 ? false : true
-
-=begin
-
-    result = pull_engine("unlist(lapply(c('.*','^Error in parse.*','^Error in parse.*unexpected end of input.*'),
-      grep,try({parse(text=#{RinRuby_Parse_String}); 1}, silent=TRUE)))")
-
-    return true if result.length == 1
-    return false if result.length == 3
-    raise ParseError, "Parse error"
-=end
   end
   public :complete?
   def assignable?(string)
-    raise ParseError, "Parse error" if ! complete?(string)
-    assign_engine(RinRuby_Parse_String,string)
-    result = pull_engine("as.integer(ifelse(inherits(try({eval(parse(text=paste(#{RinRuby_Parse_String},'<- 1')))}, silent=TRUE),'try-error'),1,0))")
-    return true if result == [0]
-    raise ParseError, "Parse error"
+    assign_engine(RinRuby_Parse_String, string)
+    res_assign, res_parse = [true, true]
+    socket_session{|socket|
+      @writer.puts "#{RinRuby_Env}$assignable(#{RinRuby_Parse_String})"
+      next if res_assign = (socket.read(4).unpack('l').first > 0)
+      @writer.puts "#{RinRuby_Env}$parseable(#{RinRuby_Parse_String})"
+      res_parse = (socket.read(4).unpack('l').first > 0)
+    }
+    raise ParseError, "Parse error" unless res_parse
+    res_assign
   end
 
   def find_R_on_windows(cygwin)
