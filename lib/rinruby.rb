@@ -594,6 +594,10 @@ def initialize(*args)
     if ( inherits(var ,"try-error") ) {
       write(#{RinRuby_Type_NotFound}L)
     } else {
+      na.indices <- function(){
+        indices <- which(is.na(var) & (!is.nan(var))) - 1L
+        write(length(indices), indices)
+      }
       if (is.matrix(var)) {
         write(#{RinRuby_Type_Matrix}L, nrow(var))
       } else if ( is.logical(var) ) {
@@ -602,6 +606,7 @@ def initialize(*args)
         write(#{RinRuby_Type_Integer}L, length(var), var)
       } else if ( is.double(var) ) {
         write(#{RinRuby_Type_Double}L, length(var), var)
+        na.indices()
       } else if ( is.character(var) ) {
         write(#{RinRuby_Type_Character}L, length(var))
         for(i in var){
@@ -657,6 +662,9 @@ def initialize(*args)
       def send(value, io)
         nil
       end
+      def receive(io)
+        nil
+      end
     end
   end
   
@@ -680,6 +688,12 @@ def initialize(*args)
           io.write(CONVERT_TABLE[x])
         }
       end
+      def receive(io)
+        length = io.read(4).unpack('l').first
+        io.read(4 * length).unpack("l*").collect{|v|
+          (v == RinRuby_NA_R_Integer) ? nil : (v > 0)
+        }
+      end
     end
   end
   
@@ -697,6 +711,12 @@ def initialize(*args)
         io.write([value.size].pack('l'))
         value.each{|x|
           io.write([(x == nil) ? RinRuby_NA_R_Integer : x].pack('l'))
+        }
+      end
+      def receive(io)
+        length = io.read(4).unpack('l').first
+        io.read(4 * length).unpack("l*").collect{|v|
+          (v == RinRuby_NA_R_Integer) ? nil : v
         }
       end
     end
@@ -725,6 +745,13 @@ def initialize(*args)
         io.write(([nils.size] + nils).pack('l*'))
         value
       end
+      def receive(io)
+        length = io.read(4).unpack('l').first
+        res = io.read(8 * length).unpack("D*")
+        na_indices = io.read(4).unpack('l').first
+        io.read(4 * na_indices).unpack("l*").each{|i| res[i] = nil}
+        res
+      end
     end
   end
   
@@ -750,6 +777,14 @@ def initialize(*args)
         }
         io.write(([nils.size] + nils).pack('l*'))
         value
+      end
+      def receive(io)
+        length = io.read(4).unpack('l').first
+        Array.new(length){|i|
+          nchar = io.read(4).unpack('l')[0]
+          # negative nchar means NA, and "+ 1" for zero-terminated string
+          (nchar >= 0) ? io.read(nchar + 1)[0..-2] : nil
+        }
       end
     end
   end
@@ -786,13 +821,6 @@ def initialize(*args)
   end
 
   def pull_engine(string, singletons = true)
-    pull_nil_proc = proc{|var, socket, values|
-      # check NA; caution is.na(c(NA, NaN)) => c(T, T), is.nan(c(NA, NaN)) => c(F, T) 
-      @writer.puts "#{RinRuby_Env}$pull(which(is.na(#{var} & (!is.nan(#{var})))) - 1L)"
-      na_indices = socket.read(8).unpack('ll')[1]
-      socket.read(4 * na_indices).unpack("l*").each{|i| values[i] = nil}
-      values
-    }
     pull_proc = proc{|var, socket|
       @writer.puts "#{RinRuby_Env}$pull(try(#{var}))"  
       type = socket.read(4).unpack('l').first
@@ -800,40 +828,27 @@ def initialize(*args)
       when RinRuby_Type_Unknown
         raise "Unsupported data type on R's end"
       when RinRuby_Type_NotFound
-        return nil
-      end
-      length = socket.read(4).unpack('l').first
-  
-      case type
-      when RinRuby_Type_Logical
-        result = socket.read(4 * length).unpack("l*").collect{|v|
-          (v == RinRuby_NA_R_Integer) ? nil : (v > 0)
-        }
-        (!singletons) && (length == 1) ? result[0] : result
-      when RinRuby_Type_Integer
-        result = socket.read(4 * length).unpack("l*").collect{|v|
-          (v == RinRuby_NA_R_Integer) ? nil : v
-        }
-        (!singletons) && (length == 1) ? result[0] : result
-      when RinRuby_Type_Double
-        result = pull_nil_proc.call(
-            var, socket, 
-            socket.read(8 * length).unpack("D*"))
-        (!singletons) && (length == 1) ? result[0] : result
-      when RinRuby_Type_Character
-        result = Array.new(length){|i|
-          nchar = socket.read(4).unpack('l')[0]
-          # negative nchar means NA, and "+ 1" for zero-terminated string
-          (nchar >= 0) ? socket.read(nchar + 1)[0..-2] : nil
-        }
-        (!singletons) && (length == 1) ? result[0] : result
+        next nil
       when RinRuby_Type_Matrix
-        Matrix.rows(length.times.collect{|i|
+        rows = socket.read(4).unpack('l').first
+        next Matrix.rows(rows.times.collect{|i|
           pull_proc.call("#{var}[#{i+1},]", socket)
         })
-      else
-        raise "Unsupported data type on Ruby's end"
       end
+      
+      r_type = [
+        R_Logical,
+        R_Integer,
+        R_Double,
+        R_Character,
+      ].find{|k|
+        k::ID == type
+      }
+      
+      raise "Unsupported data type on Ruby's end" unless r_type
+      
+      res = r_type.receive(socket)
+      (!singletons) && (res.size == 1) ? res[0] : res
     }
     socket_session{|socket|
       pull_proc.call(string, socket)
