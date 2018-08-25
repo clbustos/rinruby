@@ -83,7 +83,7 @@ shared_examples 'RinRubyCore' do
     end
     
     context "on pull" do
-      it "should pull a String" do
+      it "should pull a Character" do
         ['Value', ''].each{|v| # normal string and zero-length string
           subject.eval("x<-'#{v}'")
           expect(subject.pull('x')).to eql(v)
@@ -97,12 +97,12 @@ shared_examples 'RinRubyCore' do
           expect(subject.pull('x')).to eql(v)
         }
       end
-      it "should pull a Float" do
+      it "should pull a Double" do
         [1.5, 1.0].each{|v|
           subject.eval("x<-#{v}e0")
           expect(subject.pull('x')).to eql(v)
         }
-        [1 << 32, -(1 << 32)].each{|v| # big integer will be treated as float
+        [1 << 32, -(1 << 32)].each{|v| # big integer will be treated as double
           subject.eval("x<-#{v}")
           expect(subject.pull('x')).to eql(v.to_f)
         }
@@ -117,7 +117,7 @@ shared_examples 'RinRubyCore' do
           expect(subject.pull('x')).to eql(v)
         }
       end
-      it "should pull an Array of String" do
+      it "should pull an Array of Character" do
         {
           "c('a','b','',NA)" => ['a','b','',nil],
           "as.character(NULL)" => [],
@@ -135,7 +135,7 @@ shared_examples 'RinRubyCore' do
           expect(subject.pull('x')).to eql(v)
         }
       end
-      it "should pull an Array of Float" do
+      it "should pull an Array of Double" do
         subject.eval("x<-c(1.1,2.2,5,3,NA,NaN)") # auto-conversion to numeric vector
         expect(subject.pull('x')[0..-2]).to eql([1.1,2.2,5.0,3.0,nil])
         expect(subject.pull('x')[-1].nan?).to be_truthy
@@ -164,7 +164,7 @@ shared_examples 'RinRubyCore' do
             v = rand(100000000) # get 8 digits
             [v, "#{v}L"]
           },
-          [ # float matrix
+          [ # double matrix
             proc{
               v = rand(100000000) # get 8 digits
               [Float("0.#{v}"), "0.#{v}"]
@@ -197,7 +197,7 @@ shared_examples 'RinRubyCore' do
     end
     
     context "on assign (PREREQUISITE: all pull tests are passed)" do
-      it "should assign a String" do
+      it "should assign a Character" do
         x = 'Value'
         subject.assign("x", x)
         expect(subject.pull('x')).to eql(x)
@@ -208,7 +208,7 @@ shared_examples 'RinRubyCore' do
           expect(subject.pull('x')).to eql(x)
         }
       end
-      it "should assign a Float" do
+      it "should assign a Double" do
         [rand, 1 << 32, -(1 << 32)].each{|x|
           subject.assign("x", x)
           expect(subject.pull('x')).to eql(x.to_f)
@@ -222,7 +222,7 @@ shared_examples 'RinRubyCore' do
           expect(subject.pull('x')).to eql(x)
         }
       end
-      it "should assign an Array of String" do
+      it "should assign an Array of Character" do
         x = ['a', 'b', nil]
         subject.assign("x", x)
         expect(subject.pull('x')).to eql(x)
@@ -232,7 +232,7 @@ shared_examples 'RinRubyCore' do
         subject.assign("x", x)
         expect(subject.pull('x')).to eql(x)
       end
-      it "should assign an Array of Float" do
+      it "should assign an Array of Double" do
         x = [rand(100000000), rand(0x1000) << 32, # Integer 
             rand, Rational(rand(1000), rand(1000) + 1), # Numeric except for Complex with available .to_f  
             nil, Float::NAN]
@@ -251,13 +251,13 @@ shared_examples 'RinRubyCore' do
         [
           proc{rand(100000000)}, # integer matrix
           proc{v = rand(100000000); v > 50000000 ? nil : v}, # integer matrix with NA
-          [ # float matrix
+          [ # double matrix
             proc{rand},
             gen_matrix_cmp_per_elm_proc{|a, b|
               expect(a).to be_within(threshold).of(b)
             },
           ],
-          [ # float matrix with NA
+          [ # double matrix with NA
             proc{v = rand; v > 0.5 ? nil : v},
             gen_matrix_cmp_per_elm_proc{|a, b|
               if b.kind_of?(Numeric) then

@@ -493,7 +493,7 @@ def initialize(*args)
   RinRuby_Type_NotFound = -2
   RinRuby_Type_Unknown = -1
   [
-    :Boolean,
+    :Logical,
     :Integer,
     :Double,
     :Character,
@@ -567,12 +567,12 @@ def initialize(*args)
         na.indices <- function(){
           read(integer, read(integer, 1)) + 1L
         }
-        if ( type == #{RinRuby_Type_Boolean} ) {
+        if ( type == #{RinRuby_Type_Logical} ) {
           value <- read(logical, length)
         } else if ( type == #{RinRuby_Type_Integer} ) {
           value <- read(integer, length)
         } else if ( type == #{RinRuby_Type_Double} ) {
-          value <- read(numeric, length)
+          value <- read(double, length)
           value[na.indices()] <- NA
         } else if ( type == #{RinRuby_Type_Character} ) {
           value <- character(length)
@@ -597,7 +597,7 @@ def initialize(*args)
       if (is.matrix(var)) {
         write(#{RinRuby_Type_Matrix}L, nrow(var))
       } else if ( is.logical(var) ) {
-        write(#{RinRuby_Type_Boolean}L, length(var), as.integer(var))
+        write(#{RinRuby_Type_Logical}L, length(var), as.integer(var))
       } else if ( is.integer(var) ) {
         write(#{RinRuby_Type_Integer}L, length(var), var)
       } else if ( is.double(var) ) {
@@ -646,6 +646,7 @@ def initialize(*args)
   end
   
   class R_DataType
+    ID = RinRuby_Type_Unknown
     class <<self
       def convertable?(value)
         false
@@ -660,6 +661,7 @@ def initialize(*args)
   end
   
   class R_Logical < R_DataType
+    ID = RinRuby_Type_Logical
     CONVERT_TABLE = Hash[*({
           true => 1,
           false => 0, 
@@ -672,7 +674,7 @@ def initialize(*args)
         value.all?{|x| [true, false, nil].include?(x)}
       end
       def send(value, io)
-        # Boolean format: size, data, ...
+        # Logical format: size, data, ...
         io.write([value.size].pack('l'))
         value.each{|x|
           io.write(CONVERT_TABLE[x])
@@ -682,6 +684,7 @@ def initialize(*args)
   end
   
   class R_Integer < R_DataType
+    ID = RinRuby_Type_Integer
     class <<self
       def convertable?(value)
         value.all?{|x|
@@ -699,7 +702,8 @@ def initialize(*args)
     end
   end
   
-  class R_Numeric < R_DataType
+  class R_Double < R_DataType
+    ID = RinRuby_Type_Double
     class <<self
       def convertable?(value)
         value.all?{|x|
@@ -707,7 +711,7 @@ def initialize(*args)
         }
       end
       def send(value, io)
-        # Numeric format: data_size, data, ..., na_index_size, na_index, ...
+        # Double format: data_size, data, ..., na_index_size, na_index, ...
         io.write([value.size].pack('l'))
         nils = []
         value.each.with_index{|x, i|
@@ -725,6 +729,7 @@ def initialize(*args)
   end
   
   class R_Character < R_DataType
+    ID = RinRuby_Type_Character
     class <<self
       def convertable?(value)
         value.all?{|x|
@@ -761,19 +766,19 @@ def initialize(*args)
       value = [value]
     end
     
-    r_type, header = [
-      [R_Logical,   RinRuby_Type_Boolean],
-      [R_Integer,   RinRuby_Type_Integer],
-      [R_Numeric,   RinRuby_Type_Double],
-      [R_Character, RinRuby_Type_Character],
-    ].find{|k, i|
+    r_type = [
+      R_Logical,
+      R_Integer,
+      R_Double,
+      R_Character,
+    ].find{|k|
       k === value
     }
     raise "Unsupported data type on Ruby's end" unless r_type
     
     socket_session{|socket|
       @writer.puts(r_exp)
-      socket.write([header].pack('l'))
+      socket.write([r_type::ID].pack('l'))
       r_type.send(value, socket)
     }
     
@@ -800,7 +805,7 @@ def initialize(*args)
       length = socket.read(4).unpack('l').first
   
       case type
-      when RinRuby_Type_Boolean
+      when RinRuby_Type_Logical
         result = socket.read(4 * length).unpack("l*").collect{|v|
           (v == RinRuby_NA_R_Integer) ? nil : (v > 0)
         }
