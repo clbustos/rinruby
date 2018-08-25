@@ -599,7 +599,7 @@ def initialize(*args)
         write(length(indices), indices)
       }
       if (is.matrix(var)) {
-        write(#{RinRuby_Type_Matrix}L, nrow(var))
+        write(#{RinRuby_Type_Matrix}L, nrow(var), ncol(var))
       } else if ( is.logical(var) ) {
         write(#{RinRuby_Type_Logical}L, length(var), as.integer(var))
       } else if ( is.integer(var) ) {
@@ -830,10 +830,10 @@ def initialize(*args)
       when RinRuby_Type_NotFound
         next nil
       when RinRuby_Type_Matrix
-        rows = socket.read(4).unpack('l').first
-        next Matrix.rows(rows.times.collect{|i|
-          pull_proc.call("#{var}[#{i+1},]", socket)
-        })
+        rows, cols = socket.read(8).unpack('l*')
+        next Matrix.rows( # get rowwise flatten vector
+            [pull_proc.call("as.vector(t(#{var}))", socket)].flatten.each_slice(cols).to_a,
+            false)
       end
       
       r_type = [
