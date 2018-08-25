@@ -762,7 +762,7 @@ def initialize(*args)
     if value.kind_of?(::Matrix) # assignment for matrices
       r_exp = "#{name} <- matrix(#{RinRuby_Env}$get_value(), nrow=#{value.row_size}, ncol=#{value.column_size}, byrow=T)"
       value = value.row_vectors.collect{|row| row.to_a}.flatten
-    elsif !value.kind_of?(Array) then # check Array
+    elsif !value.kind_of?(Enumerable) then # check each
       value = [value]
     end
     
