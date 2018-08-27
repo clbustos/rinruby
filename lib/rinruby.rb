@@ -637,15 +637,24 @@ def initialize(*args)
       EOF
       t.join
     end
-    res = b.call(socket)
-    if @opts[:persistent]
-      @socket = socket
-    else
-      @writer.puts <<-EOF
-        close(#{RinRuby_Socket})
-        #{RinRuby_Socket} <- NULL
-      EOF
-      socket.close
+    keep_socket = @opts[:persistent]
+    res = nil
+    begin
+      res = b.call(socket)
+    rescue
+      keep_socket = false
+      raise $!
+    ensure
+      if keep_socket
+        @socket = socket
+      else
+        @socket = nil
+        @writer.puts <<-EOF
+          close(#{RinRuby_Socket})
+          #{RinRuby_Socket} <- NULL
+        EOF
+        socket.close
+      end
     end
     res
   end
