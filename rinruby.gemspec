@@ -1,11 +1,11 @@
 # coding: utf-8
 lib = File.expand_path('../lib', __FILE__)
 $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
-require 'version'
+require 'rinruby/version'
 
 Gem::Specification.new do |spec|
   spec.name          = "rinruby"
-  spec.version       = Rinruby::VERSION
+  spec.version       = RinRuby::VERSION
   spec.authors       = ["David Dahl", "Scott Crawford", "Claudio Bustos"]
   spec.email         = ["rinruby@ddahl.org", "scott@ddahl.org", "clbustos@gmail.com"]
   spec.summary       = %q{RinRuby is a Ruby library that integrates the R interpreter in Ruby}
