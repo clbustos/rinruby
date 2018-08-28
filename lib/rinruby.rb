@@ -58,11 +58,12 @@
 #
 #The files "java" and "readline" are used when available to add functionality.
 require 'matrix'
+
+require File.expand_path(File.dirname(__FILE__) + '/rinruby/version.rb')
+
 class RinRuby
 
   require 'socket'
-
-  VERSION = '2.0.3'
 
   attr_reader :interactive
   attr_reader :readline
