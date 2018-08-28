@@ -15,7 +15,11 @@ shared_examples 'RinRubyCore' do
   describe "on init" do
     after{(r.quit rescue nil) if defined?(r)}
     it "should accept parameters as specified on Dahl & Crawford(2009)" do
-      expect(r.echo_enabled).to be_falsy
+      if r.instance_variable_get(:@platform) =~ /.*-java/
+        expect(r.echo_enabled).to be_truthy # For jruby, echo will be overridden as true
+      else
+        expect(r.echo_enabled).to be_falsy
+      end
       expect(r.interactive).to be_falsy
       case r.instance_variable_get(:@platform)
       when /^windows/ then

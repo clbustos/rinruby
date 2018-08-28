@@ -65,8 +65,6 @@ class RinRuby
 
   require 'socket'
 
-  attr_reader :interactive
-  attr_reader :readline
   # Exception for closed engine
   EngineClosed=Class.new(Exception)
   # Parse error
@@ -75,7 +73,9 @@ class RinRuby
   RinRuby_Env = ".RinRuby"
   RinRuby_Endian = ([1].pack("L").unpack("C*")[0] == 1) ? (:little) : (:big)
 
-  attr_accessor :echo_enabled
+  attr_reader :interactive
+  attr_reader :readline
+  attr_reader :echo_enabled
   attr_reader :executable
   attr_reader :port_number
   attr_reader :port_width
@@ -119,6 +119,7 @@ class RinRuby
     [:port_width, :executable, :hostname, :interactive, [:echo, :echo_enabled]].each{|k_src, k_dst|
       Kernel.eval("@#{k_dst || k_src} = @opts[:#{k_src}]", binding)
     }
+    @echo_stderr = false
       
     while true
       @port_number = @opts[:port_number] + rand(@opts[:port_width])
@@ -130,7 +131,6 @@ class RinRuby
       end
     end
     
-    @echo_stderr = false
     @platform = case RUBY_PLATFORM
       when /mswin/, /mingw/, /bccwin/ then 'windows'
       when /cygwin/ then 'windows-cygwin'
@@ -161,8 +161,9 @@ class RinRuby
     EOF
     @socket = nil
     [:socket_io, :get_value, :pull, :check].each{|fname| self.send("r_rinruby_#{fname}")}
-      
-    echo(nil, true) if @platform =~ /.*-java/      # Redirect error messages on the Java platform
+    
+    # Echo setup; redirect error messages on the Java platform
+    (@platform =~ /.*-java/) ? echo(true, true) : echo()      
   end
 
 #The quit method will properly close the bridge between Ruby and R, freeing up system resources. This method does not need to be run when a Ruby script ends.
@@ -456,23 +457,25 @@ class RinRuby
 #
 #* stderr: Setting stderr to true will force messages, warnings, and errors from R to be routed through stdout.  Using stderr redirection is typically not needed for the C implementation of Ruby and is thus not not enabled by default for this implementation.  It is typically necessary for jRuby and is enabled by default in this case.  This redirection works well in practice but it can lead to interleaving output which may confuse RinRuby.  In such cases, stderr redirection should not be used.  Echoing must be enabled when using stderr redirection.
 
-  def echo(enable=nil,stderr=nil)
-    if ( enable == false ) && ( stderr == true )
+  def echo(enable=nil, stderr=nil)
+    next_enabled = (enable == nil) ? @echo_enabled : (enable ? true : false)
+    next_stderr = case stderr
+    when nil
+      (next_enabled ? @echo_stderr : false) 
+    else
+      (stderr ? true : false)
+    end
+    
+    if (next_enabled == false) && (next_stderr == true) then # prohibited combination
       raise "You can only redirect stderr if you are echoing is enabled."
     end
-    if ( enable != nil ) && ( enable != @echo_enabled )
-      echo(nil,false) if ! enable
-      @echo_enabled = ! @echo_enabled
-    end
-    if @echo_enabled && ( stderr != nil ) && ( stderr != @echo_stderr )
-      @echo_stderr = ! @echo_stderr
-      if @echo_stderr
-        eval "sink(stdout(),type='message')"
-      else
-        eval "sink(type='message')"
-      end
-    end
-    [ @echo_enabled, @echo_stderr ]
+    
+    eval "sink(#{'stdout(),' if next_stderr}type='message')" if @echo_stderr != next_stderr
+    [@echo_enabled = next_enabled, @echo_stderr = next_stderr]
+  end
+  
+  def echo_enabled=(enable)
+    echo(enable).first
   end
 
   private
