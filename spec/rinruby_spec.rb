@@ -70,8 +70,20 @@ shared_examples 'RinRubyCore' do
       end
     end
     
+    def gen_matrix_cmp_per_elm_proc(&cmp_proc)
+      proc{|a, b|
+        expect(a.row_size).to eql(b.row_size)
+        expect(a.column_size).to eql(b.column_size)
+        a.row_size.times{|i|
+          a.column_size.times{|j|
+            cmp_proc.call(a[i,j], b[i,j])
+          }
+        }
+      }
+    end
+    
     context "on pull" do
-      it "should pull a String" do
+      it "should pull a Character" do
         ['Value', ''].each{|v| # normal string and zero-length string
           subject.eval("x<-'#{v}'")
           expect(subject.pull('x')).to eql(v)
@@ -85,12 +97,12 @@ shared_examples 'RinRubyCore' do
           expect(subject.pull('x')).to eql(v)
         }
       end
-      it "should pull a Float" do
+      it "should pull a Double" do
         [1.5, 1.0].each{|v|
           subject.eval("x<-#{v}e0")
           expect(subject.pull('x')).to eql(v)
         }
-        [1 << 32, -(1 << 32)].each{|v| # big integer will be treated as float
+        [1 << 32, -(1 << 32)].each{|v| # big integer will be treated as double
           subject.eval("x<-#{v}")
           expect(subject.pull('x')).to eql(v.to_f)
         }
@@ -105,7 +117,7 @@ shared_examples 'RinRubyCore' do
           expect(subject.pull('x')).to eql(v)
         }
       end
-      it "should pull an Array of String" do
+      it "should pull an Array of Character" do
         {
           "c('a','b','',NA)" => ['a','b','',nil],
           "as.character(NULL)" => [],
@@ -123,7 +135,7 @@ shared_examples 'RinRubyCore' do
           expect(subject.pull('x')).to eql(v)
         }
       end
-      it "should pull an Array of Float" do
+      it "should pull an Array of Double" do
         subject.eval("x<-c(1.1,2.2,5,3,NA,NaN)") # auto-conversion to numeric vector
         expect(subject.pull('x')[0..-2]).to eql([1.1,2.2,5.0,3.0,nil])
         expect(subject.pull('x')[-1].nan?).to be_truthy
@@ -146,16 +158,22 @@ shared_examples 'RinRubyCore' do
       end
 
       it "should pull a Matrix" do
+        threshold = 1e-8
         [
           proc{ # integer matrix
             v = rand(100000000) # get 8 digits
             [v, "#{v}L"]
           },
-          proc{ # float matrix
-            v = rand(100000000) # get 8 digits
-            [Float("0.#{v}"), "0.#{v}"]
-          },
-        ].each{|gen_proc|
+          [ # double matrix
+            proc{
+              v = rand(100000000) # get 8 digits
+              [Float("0.#{v}"), "0.#{v}"]
+            },
+            gen_matrix_cmp_per_elm_proc{|a, b|
+              expect(a).to be_within(threshold).of(b)
+            }
+          ],
+        ].each{|gen_proc, cmp_proc|
           nrow, ncol = [10, 10] # 10 x 10 small matrix
           subject.eval("x<-matrix(nrow=#{nrow}, ncol=#{ncol})")
           rx = Matrix[*((1..nrow).collect{|i|
@@ -165,7 +183,7 @@ shared_examples 'RinRubyCore' do
               v_rb
             }
           })]
-          expect(subject.pull('x')).to eql(rx)
+          (cmp_proc || proc{|a, b| expect(a).to eql(b)}).call(subject.pull('x'), rx)
         }
       end
       
@@ -179,7 +197,7 @@ shared_examples 'RinRubyCore' do
     end
     
     context "on assign (PREREQUISITE: all pull tests are passed)" do
-      it "should assign a String" do
+      it "should assign a Character" do
         x = 'Value'
         subject.assign("x", x)
         expect(subject.pull('x')).to eql(x)
@@ -190,7 +208,7 @@ shared_examples 'RinRubyCore' do
           expect(subject.pull('x')).to eql(x)
         }
       end
-      it "should assign a Float" do
+      it "should assign a Double" do
         [rand, 1 << 32, -(1 << 32)].each{|x|
           subject.assign("x", x)
           expect(subject.pull('x')).to eql(x.to_f)
@@ -204,7 +222,7 @@ shared_examples 'RinRubyCore' do
           expect(subject.pull('x')).to eql(x)
         }
       end
-      it "should assign an Array of String" do
+      it "should assign an Array of Character" do
         x = ['a', 'b', nil]
         subject.assign("x", x)
         expect(subject.pull('x')).to eql(x)
@@ -214,9 +232,12 @@ shared_examples 'RinRubyCore' do
         subject.assign("x", x)
         expect(subject.pull('x')).to eql(x)
       end
-      it "should assign an Array of Float" do
-        subject.assign("x", [1.1, 2.2, 5, 3, nil, Float::NAN])
-        expect(subject.pull('x')[0..-2]).to eql([1.1,2.2,5.0,3.0, nil])
+      it "should assign an Array of Double" do
+        x = [rand(100000000), rand(0x1000) << 32, # Integer 
+            rand, Rational(rand(1000), rand(1000) + 1), # Numeric except for Complex with available .to_f  
+            nil, Float::NAN]
+        subject.assign("x", x)
+        expect(subject.pull('x')[0..-2]).to eql(x[0..-3].collect{|v| v.to_f} + [nil])
         expect(subject.pull('x')[-1].nan?).to be_truthy
       end
       it "should assign an Array of Logical" do
@@ -226,49 +247,30 @@ shared_examples 'RinRubyCore' do
       end
 
       it "should assign a Matrix" do
+        threshold = Float::EPSILON * 100
         [
-          [ # integer matrix
-            proc{rand(100000000)},
-            proc{|a, b| expect(a).to eql(b)},
-          ],
-          [ # integer matrix with NA
-            proc{v = rand(100000000); v > 50000000 ? nil : v},
-            proc{|a, b| expect(a).to eql(b)},
-          ],
-          [ # float matrix
+          proc{rand(100000000)}, # integer matrix
+          proc{v = rand(100000000); v > 50000000 ? nil : v}, # integer matrix with NA
+          [ # double matrix
             proc{rand},
-            proc{|a, b|
-              threshold = Float::EPSILON * 10
-              expect(a.row_size).to eql(b.row_size)
-              expect(a.column_size).to eql(b.column_size)
-              a.row_size.times{|i|
-                a.column_size.times{|j|
-                  expect(a[i,j]).to be_within(threshold).of(b[i,j])
-                }
-              }
+            gen_matrix_cmp_per_elm_proc{|a, b|
+              expect(a).to be_within(threshold).of(b)
             },
           ],
-          [ # float matrix with NA
+          [ # double matrix with NA
             proc{v = rand; v > 0.5 ? nil : v},
-            proc{|a, b|
-              threshold = Float::EPSILON * 10
-              expect(a.row_size).to eql(b.row_size)
-              expect(a.column_size).to eql(b.column_size)
-              a.row_size.times{|i|
-                a.column_size.times{|j|
-                  if b[i,j].kind_of?(Numeric) then
-                    expect(a[i,j]).to be_within(threshold).of(b[i,j])
-                  else
-                    expect(a[i,j]).to eql(nil)
-                  end
-                }
-              }
+            gen_matrix_cmp_per_elm_proc{|a, b|
+              if b.kind_of?(Numeric) then
+                expect(a).to be_within(threshold).of(b)
+              else
+                expect(a).to eql(nil)
+              end
             },
           ],
         ].each{|gen_proc, cmp_proc|
           x = Matrix::build(100, 200){|i, j| gen_proc.call} # 100 x 200 matrix
           subject.assign("x", x)
-          cmp_proc.call(subject.pull('x'), x)
+          (cmp_proc || proc{|a, b| expect(a).to eql(b)}).call(subject.pull('x'), x)
         }        
       end
       
