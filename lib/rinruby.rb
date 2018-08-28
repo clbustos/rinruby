@@ -74,7 +74,13 @@ class RinRuby
 
   RinRuby_Env = ".RinRuby"
   RinRuby_Endian = ([1].pack("L").unpack("C*")[0] == 1) ? (:little) : (:big)
-  
+
+  attr_accessor :echo_enabled
+  attr_reader :executable
+  attr_reader :port_number
+  attr_reader :port_width
+  attr_reader :hostname
+      
 #RinRuby is invoked within a Ruby script (or the interactive "irb" prompt denoted >>) using:
 #
 #      >> require "rinruby"
@@ -100,82 +106,63 @@ class RinRuby
 #      >> require "rinruby"
 #      >> R.quit
 #      >> R = RinRuby.new(false)
-attr_accessor :echo_enabled
-attr_reader :executable
-attr_reader :port_number
-attr_reader :port_width
-attr_reader :hostname
-def initialize(*args)
-  opts=Hash.new
-  if args.size==1 and args[0].is_a? Hash
-    opts=args[0]
-  else
-    opts[:echo]=args.shift unless args.size==0
-    opts[:interactive]=args.shift unless args.size==0
-    opts[:executable]=args.shift unless args.size==0
-    opts[:port_number]=args.shift unless args.size==0
-    opts[:port_width]=args.shift unless args.size==0
-  end
-  default_opts= {:echo=>true, :interactive=>true, :executable=>nil, :port_number=>38442, :port_width=>1000, :hostname=>'127.0.0.1', :persistent => true}
-
-    @opts=default_opts.merge(opts)
-    @port_width=@opts[:port_width]
-    @executable=@opts[:executable]
-    @hostname=@opts[:hostname]
+  def initialize(*args)
+    @opts = {:echo=>true, :interactive=>true, :executable=>nil, 
+        :port_number=>38442, :port_width=>1000, :hostname=>'127.0.0.1', :persistent => true}        
+    if args.size==1 and args[0].is_a? Hash
+      @opts.merge!(args[0])
+    else
+      [:echo, :interactive, :executable, :port_number, :port_width].each{|k|
+        @opts[k] = args.shift unless args.empty?
+      }
+    end
+    [:port_width, :executable, :hostname, :interactive, [:echo, :echo_enabled]].each{|k_src, k_dst|
+      Kernel.eval("@#{k_dst || k_src} = @opts[:#{k_src}]", binding)
+    }
+      
     while true
+      @port_number = @opts[:port_number] + rand(@opts[:port_width])
       begin
-        @port_number = @opts[:port_number] + rand(port_width)
         @server_socket = TCPServer::new(@hostname, @port_number)
         break
       rescue Errno::EADDRINUSE
-        sleep 0.5 if port_width == 1
+        sleep 0.5 if @opts[:port_width] == 1
       end
     end
-    @echo_enabled = @opts[:echo]
+    
     @echo_stderr = false
-    @interactive = @opts[:interactive]
     @platform = case RUBY_PLATFORM
-      when /mswin/ then 'windows'
-      when /mingw/ then 'windows'
-      when /bccwin/ then 'windows'
+      when /mswin/, /mingw/, /bccwin/ then 'windows'
       when /cygwin/ then 'windows-cygwin'
       when /java/
         require 'java' #:nodoc:
-        if java.lang.System.getProperty("os.name") =~ /[Ww]indows/
-          'windows-java'
-        else
-          'default-java'
-        end
+        "#{java.lang.System.getProperty('os.name') =~ /[Ww]indows/ ? 'windows' : 'default'}-java"
       else 'default'
     end
-    if @executable == nil
-      @executable = ( @platform =~ /windows/ ) ? find_R_on_windows(@platform =~ /cygwin/) : 'R'
-    end
+    @executable ||= ( @platform =~ /windows/ ) ? find_R_on_windows(@platform =~ /cygwin/) : 'R'
+    
     platform_options = []
-    if ( @interactive )
+    @readline = false
+    if @interactive
       begin
         require 'readline'
       rescue LoadError
       end
       @readline = defined?(Readline)
       platform_options << ( ( @platform =~ /windows/ ) ? '--ess' : '--interactive' )
-    else
-      @readline = false
     end
+    
     cmd = %Q<#{executable} #{platform_options.join(' ')} --slave>
-    @engine = IO.popen(cmd,"w+")
-    @reader = @engine
-    @writer = @engine
+    @writer = @reader = @engine = IO.popen(cmd,"w+")
     raise "Engine closed" if @engine.closed?
+    
     @writer.puts <<-EOF
       assign("#{RinRuby_Env}", new.env(), baseenv())
     EOF
     @socket = nil
-    r_rinruby_socket_io
-    r_rinruby_get_value
-    r_rinruby_pull
-    r_rinruby_check
-    echo(nil,true) if @platform =~ /.*-java/      # Redirect error messages on the Java platform
+    [:socket_io, :get_value, :pull, :check].each{|fname| self.send("r_rinruby_#{fname}")}
+      
+    echo(nil, true) if @platform =~ /.*-java/      # Redirect error messages on the Java platform
   end
 
 #The quit method will properly close the bridge between Ruby and R, freeing up system resources. This method does not need to be run when a Ruby script ends.
