@@ -218,54 +218,44 @@ class RinRuby
 
   def eval(string, echo_override=nil)
     raise EngineClosed if @engine.closed?
-    echo_enabled = ( echo_override != nil ) ? echo_override : @echo_enabled
-    if complete?(string)
-      @writer.puts string
-      @writer.puts "warning('#{RinRuby_Stderr_Flag}',immediate.=TRUE)" if @echo_stderr
-      @writer.puts "print('#{RinRuby_Eval_Flag}')"
-    else
-      raise ParseError, "Parse error on eval:#{string}"
-    end
-    Signal.trap('INT') do
-      @writer.print ''
+    raise ParseError, "Parse error on eval:#{string}" unless complete?(string)
+    
+    @writer.puts string
+    @writer.puts "warning('#{RinRuby_Stderr_Flag}',immediate.=TRUE)" if @echo_stderr
+    @writer.puts "print('#{RinRuby_Eval_Flag}')"
+    
+    int_handler_orig = Signal.trap('INT'){
+      @writer.print [0x03].pack('C')
       @reader.gets if @platform !~ /java/
-      Signal.trap('INT') do
-      end
-      return true
+      Signal.trap('INT', nil) # ignore signal
+    }
+    
+    echo_proc = proc{}
+    if ((echo_override == nil) ? @echo_enabled : echo_override) then
+      echo_proc = (@platform !~ /windows/) \
+          ? proc{|line| puts line; $stdout.flush} \
+          : proc{|line| puts line}
     end
-    found_eval_flag = false
-    found_stderr_flag = false
-    while true
-      echo_eligible = true
-      begin
-        line = @reader.gets
-      rescue
-        return false
+    
+    res = false
+    begin
+      while (line = @reader.gets)
+        # TODO I18N; force_encoding('origin').encode('UTF-8')
+        while line.chomp!; end
+        line = line[8..-1] if line[0] == 27 # delete escape sequence
+        case line
+        when "[1] \"#{RinRuby_Eval_Flag}\""
+          res = true
+          break
+        when /(?:Warning)?: #{RinRuby_Stderr_Flag}/ # "Warning" string may be localized
+          next
+        end
+        echo_proc.call(line)
       end
-      if ! line
-        return false
-      end
-      while line.chomp!
-      end
-      line = line[8..-1] if line[0] == 27     # Delete escape sequence
-      if line == "[1] \"#{RinRuby_Eval_Flag}\""
-        found_eval_flag = true
-        echo_eligible = false
-      end
-      if line == "Warning: #{RinRuby_Stderr_Flag}"
-        found_stderr_flag = true
-        echo_eligible = false
-      end
-      break if found_eval_flag && ( found_stderr_flag == @echo_stderr )
-      return false if line == RinRuby_Exit_Flag
-      if echo_enabled && echo_eligible
-        puts line
-        $stdout.flush if @platform !~ /windows/
-      end
+    ensure
+      Signal.trap('INT', int_handler_orig)
     end
-    Signal.trap('INT') do
-    end
-    true
+    res
   end
 
 #When sending code to Ruby using an interactive prompt, this method will change the prompt to an R prompt. From the R prompt commands can be sent to R exactly as if the R program was actually running. When the user is ready to return to Ruby, then the command exit() will return the prompt to Ruby. This is the ideal situation for the explorative programmer who needs to run several lines of code in R, and see the results after each command. This is also an easy way to execute loops without the use of a here document. It should be noted that the prompt command does not work in a script, just Ruby's interactive irb.
@@ -498,7 +488,6 @@ class RinRuby
   
   RinRuby_Eval_Flag = "RINRUBY.EVAL.FLAG"
   RinRuby_Stderr_Flag = "RINRUBY.STDERR.FLAG"
-  RinRuby_Exit_Flag = "RINRUBY.EXIT.FLAG"
   
   RinRuby_NA_R_Integer  = -(1 << 31)
   RinRuby_Max_R_Integer =  (1 << 31) - 1
