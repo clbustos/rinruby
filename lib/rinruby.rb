@@ -142,15 +142,7 @@ class RinRuby
     @executable ||= ( @platform =~ /windows/ ) ? find_R_on_windows(@platform =~ /cygwin/) : 'R'
     
     platform_options = []
-    @readline = false
-    if @interactive
-      begin
-        require 'readline'
-      rescue LoadError
-      end
-      @readline = defined?(Readline)
-      platform_options << ( ( @platform =~ /windows/ ) ? '--ess' : '--interactive' )
-    end
+    platform_options << ( ( @platform =~ /windows/ ) ? '--ess' : '--interactive' ) if @interactive
     
     cmd = %Q<#{executable} #{platform_options.join(' ')} --slave>
     @writer = @reader = @engine = IO.popen(cmd,"w+")
@@ -267,37 +259,36 @@ class RinRuby
 #* continue_prompt: This is the string used to denote R's prompt for an incomplete statement (such as a multiple for loop).
 
   def prompt(regular_prompt="> ", continue_prompt="+ ")
-    raise "The 'prompt' method only available in 'interactive' mode" if ! @interactive
-    return false if ! eval("0",false)
-    prompt = regular_prompt
+    raise "The 'prompt' method only available in 'interactive' mode" unless @interactive
+    return false unless eval("0", false)
+    
+    @readline ||= begin # initialize @readline at the first invocation
+      require 'readline'
+      proc{|prompt| Readline.readline(prompt, true)}
+    rescue LoadError
+      proc{|prompt|
+        print prompt
+        $stdout.flush
+        gets.strip
+      }
+    end
+    
     while true
       cmds = []
-      while true
-        if @readline && @interactive
-          cmd = Readline.readline(prompt,true)
-        else
-          print prompt
-          $stdout.flush
-          cmd = gets.strip
+      prompt = regular_prompt
+      begin
+        while true
+          cmds << @readline.call(prompt)
+          break if complete?(cmds.join("\n"))
+          prompt = continue_prompt
         end
-        cmds << cmd
-        begin
-          if complete?(cmds.join("\n"))
-            prompt = regular_prompt
-            break
-          else
-            prompt = continue_prompt
-          end
-        rescue
-          puts "Parse error"
-          prompt = regular_prompt
-          cmds = []
-          break
-        end
+      rescue ParseError => e
+        puts e.message
+        next
       end
-      next if cmds.length == 0
+      next if cmds.empty?
       break if cmds.length == 1 && cmds[0] == "exit()"
-      break if ! eval(cmds.join("\n"),true)
+      break unless eval(cmds.join("\n"), true)
     end
     true
   end
