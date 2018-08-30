@@ -503,6 +503,8 @@ class RinRuby
         #{RinRuby_Env}$session(function(con){
           reader(function(vtype, len){
             invisible(readBin(con, vtype(), len, endian="#{RinRuby_Endian}"))
+          }, function(bytes){
+            invisible(readChar(con, bytes, useBytes = T))
           })
         })
       }
@@ -531,7 +533,7 @@ class RinRuby
   def r_rinruby_get_value
     @writer.puts <<-EOF
     #{RinRuby_Env}$get_value <- function() {
-      #{RinRuby_Env}$session.read(function(read){
+      #{RinRuby_Env}$session.read(function(read, readchar){
         value <- NULL
         type <- read(integer, 1)
         length <- read(integer, 1)
@@ -548,9 +550,9 @@ class RinRuby
         } else if ( type == #{RinRuby_Type_Character} ) {
           value <- character(length)
           for(i in seq_len(length)){
-            value[[i]] <- read(character, 1)
+            nbytes <- read(integer, 1)
+            value[[i]] <- ifelse(nbytes >= 0, readchar(nbytes), NA)
           }
-          value[na.indices()] <- NA
         }
         value
       })
@@ -584,7 +586,7 @@ class RinRuby
           if( is.na(i) ){
             write(as.integer(NA))
           }else{
-            write(nchar(i), i)
+            write(nchar(i, type="bytes"), i)
           }
         }
       } else {
@@ -744,18 +746,16 @@ class RinRuby
         }
       end
       def send(value, io)
-        # Character format: data_size, data, ..., na_index_size, na_index, ...
+        # Character format: data_size, data1_bytes, data1, data2_bytes, data2, ...
         io.write([value.size].pack('l'))
-        nils = []
-        value.each.with_index{|x, i|
-          io.write(if x == nil then
-            nils << i
-            ''
+        value.each{|x|
+          if x then
+            bytes = x.to_s.bytes # TODO: taking care of encoding difference
+            io.write(([bytes.size] + bytes).pack('lC*')) # .bytes.pack("C*").encoding equals to "ASCII-8BIT"
           else
-            x.to_s
-          end + [0].pack('C'))
+            io.write([RinRuby_NA_R_Integer].pack('l'))
+          end
         }
-        io.write(([nils.size] + nils).pack('l*'))
         value
       end
       def receive(io)
