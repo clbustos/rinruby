@@ -65,8 +65,6 @@ class RinRuby
 
   require 'socket'
 
-  attr_reader :interactive
-  attr_reader :readline
   # Exception for closed engine
   EngineClosed=Class.new(Exception)
   # Parse error
@@ -74,7 +72,15 @@ class RinRuby
 
   RinRuby_Env = ".RinRuby"
   RinRuby_Endian = ([1].pack("L").unpack("C*")[0] == 1) ? (:little) : (:big)
-  
+
+  attr_reader :interactive
+  attr_reader :readline
+  attr_reader :echo_enabled
+  attr_reader :executable
+  attr_reader :port_number
+  attr_reader :port_width
+  attr_reader :hostname
+      
 #RinRuby is invoked within a Ruby script (or the interactive "irb" prompt denoted >>) using:
 #
 #      >> require "rinruby"
@@ -100,82 +106,56 @@ class RinRuby
 #      >> require "rinruby"
 #      >> R.quit
 #      >> R = RinRuby.new(false)
-attr_accessor :echo_enabled
-attr_reader :executable
-attr_reader :port_number
-attr_reader :port_width
-attr_reader :hostname
-def initialize(*args)
-  opts=Hash.new
-  if args.size==1 and args[0].is_a? Hash
-    opts=args[0]
-  else
-    opts[:echo]=args.shift unless args.size==0
-    opts[:interactive]=args.shift unless args.size==0
-    opts[:executable]=args.shift unless args.size==0
-    opts[:port_number]=args.shift unless args.size==0
-    opts[:port_width]=args.shift unless args.size==0
-  end
-  default_opts= {:echo=>true, :interactive=>true, :executable=>nil, :port_number=>38442, :port_width=>1000, :hostname=>'127.0.0.1', :persistent => true}
-
-    @opts=default_opts.merge(opts)
-    @port_width=@opts[:port_width]
-    @executable=@opts[:executable]
-    @hostname=@opts[:hostname]
+  def initialize(*args)
+    @opts = {:echo=>true, :interactive=>true, :executable=>nil, 
+        :port_number=>38442, :port_width=>1000, :hostname=>'127.0.0.1', :persistent => true}        
+    if args.size==1 and args[0].is_a? Hash
+      @opts.merge!(args[0])
+    else
+      [:echo, :interactive, :executable, :port_number, :port_width].each{|k|
+        @opts[k] = args.shift unless args.empty?
+      }
+    end
+    [:port_width, :executable, :hostname, :interactive, [:echo, :echo_enabled]].each{|k_src, k_dst|
+      Kernel.eval("@#{k_dst || k_src} = @opts[:#{k_src}]", binding)
+    }
+    @echo_stderr = false
+      
     while true
+      @port_number = @opts[:port_number] + rand(@opts[:port_width])
       begin
-        @port_number = @opts[:port_number] + rand(port_width)
         @server_socket = TCPServer::new(@hostname, @port_number)
         break
       rescue Errno::EADDRINUSE
-        sleep 0.5 if port_width == 1
+        sleep 0.5 if @opts[:port_width] == 1
       end
     end
-    @echo_enabled = @opts[:echo]
-    @echo_stderr = false
-    @interactive = @opts[:interactive]
+    
     @platform = case RUBY_PLATFORM
-      when /mswin/ then 'windows'
-      when /mingw/ then 'windows'
-      when /bccwin/ then 'windows'
+      when /mswin/, /mingw/, /bccwin/ then 'windows'
       when /cygwin/ then 'windows-cygwin'
       when /java/
         require 'java' #:nodoc:
-        if java.lang.System.getProperty("os.name") =~ /[Ww]indows/
-          'windows-java'
-        else
-          'default-java'
-        end
+        "#{java.lang.System.getProperty('os.name') =~ /[Ww]indows/ ? 'windows' : 'default'}-java"
       else 'default'
     end
-    if @executable == nil
-      @executable = ( @platform =~ /windows/ ) ? find_R_on_windows(@platform =~ /cygwin/) : 'R'
-    end
+    @executable ||= ( @platform =~ /windows/ ) ? find_R_on_windows(@platform =~ /cygwin/) : 'R'
+    
     platform_options = []
-    if ( @interactive )
-      begin
-        require 'readline'
-      rescue LoadError
-      end
-      @readline = defined?(Readline)
-      platform_options << ( ( @platform =~ /windows/ ) ? '--ess' : '--interactive' )
-    else
-      @readline = false
-    end
+    platform_options << ( ( @platform =~ /windows/ ) ? '--ess' : '--interactive' ) if @interactive
+    
     cmd = %Q<#{executable} #{platform_options.join(' ')} --slave>
-    @engine = IO.popen(cmd,"w+")
-    @reader = @engine
-    @writer = @engine
+    @writer = @reader = @engine = IO.popen(cmd,"w+")
     raise "Engine closed" if @engine.closed?
+    
     @writer.puts <<-EOF
       assign("#{RinRuby_Env}", new.env(), baseenv())
     EOF
     @socket = nil
-    r_rinruby_socket_io
-    r_rinruby_get_value
-    r_rinruby_pull
-    r_rinruby_check
-    echo(nil,true) if @platform =~ /.*-java/      # Redirect error messages on the Java platform
+    [:socket_io, :get_value, :pull, :check].each{|fname| self.send("r_rinruby_#{fname}")}
+    
+    # Echo setup; redirect error messages on the Java platform
+    (@platform =~ /.*-java/) ? echo(true, true) : echo()      
   end
 
 #The quit method will properly close the bridge between Ruby and R, freeing up system resources. This method does not need to be run when a Ruby script ends.
@@ -230,54 +210,44 @@ def initialize(*args)
 
   def eval(string, echo_override=nil)
     raise EngineClosed if @engine.closed?
-    echo_enabled = ( echo_override != nil ) ? echo_override : @echo_enabled
-    if complete?(string)
-      @writer.puts string
-      @writer.puts "warning('#{RinRuby_Stderr_Flag}',immediate.=TRUE)" if @echo_stderr
-      @writer.puts "print('#{RinRuby_Eval_Flag}')"
-    else
-      raise ParseError, "Parse error on eval:#{string}"
-    end
-    Signal.trap('INT') do
-      @writer.print ''
+    raise ParseError, "Parse error on eval:#{string}" unless complete?(string)
+    
+    @writer.puts string
+    @writer.puts "warning('#{RinRuby_Stderr_Flag}',immediate.=TRUE)" if @echo_stderr
+    @writer.puts "print('#{RinRuby_Eval_Flag}')"
+    
+    int_handler_orig = Signal.trap('INT'){
+      @writer.print [0x03].pack('C')
       @reader.gets if @platform !~ /java/
-      Signal.trap('INT') do
-      end
-      return true
+      Signal.trap('INT', nil) # ignore signal
+    }
+    
+    echo_proc = proc{}
+    if ((echo_override == nil) ? @echo_enabled : echo_override) then
+      echo_proc = (@platform !~ /windows/) \
+          ? proc{|line| puts line; $stdout.flush} \
+          : proc{|line| puts line}
     end
-    found_eval_flag = false
-    found_stderr_flag = false
-    while true
-      echo_eligible = true
-      begin
-        line = @reader.gets
-      rescue
-        return false
+    
+    res = false
+    begin
+      while (line = @reader.gets)
+        # TODO I18N; force_encoding('origin').encode('UTF-8')
+        while line.chomp!; end
+        line = line[8..-1] if line[0] == 27 # delete escape sequence
+        case line
+        when "[1] \"#{RinRuby_Eval_Flag}\""
+          res = true
+          break
+        when /(?:Warning)?: #{RinRuby_Stderr_Flag}/ # "Warning" string may be localized
+          next
+        end
+        echo_proc.call(line)
       end
-      if ! line
-        return false
-      end
-      while line.chomp!
-      end
-      line = line[8..-1] if line[0] == 27     # Delete escape sequence
-      if line == "[1] \"#{RinRuby_Eval_Flag}\""
-        found_eval_flag = true
-        echo_eligible = false
-      end
-      if line == "Warning: #{RinRuby_Stderr_Flag}"
-        found_stderr_flag = true
-        echo_eligible = false
-      end
-      break if found_eval_flag && ( found_stderr_flag == @echo_stderr )
-      return false if line == RinRuby_Exit_Flag
-      if echo_enabled && echo_eligible
-        puts line
-        $stdout.flush if @platform !~ /windows/
-      end
+    ensure
+      Signal.trap('INT', int_handler_orig)
     end
-    Signal.trap('INT') do
-    end
-    true
+    res
   end
 
 #When sending code to Ruby using an interactive prompt, this method will change the prompt to an R prompt. From the R prompt commands can be sent to R exactly as if the R program was actually running. When the user is ready to return to Ruby, then the command exit() will return the prompt to Ruby. This is the ideal situation for the explorative programmer who needs to run several lines of code in R, and see the results after each command. This is also an easy way to execute loops without the use of a here document. It should be noted that the prompt command does not work in a script, just Ruby's interactive irb.
@@ -289,37 +259,36 @@ def initialize(*args)
 #* continue_prompt: This is the string used to denote R's prompt for an incomplete statement (such as a multiple for loop).
 
   def prompt(regular_prompt="> ", continue_prompt="+ ")
-    raise "The 'prompt' method only available in 'interactive' mode" if ! @interactive
-    return false if ! eval("0",false)
-    prompt = regular_prompt
+    raise "The 'prompt' method only available in 'interactive' mode" unless @interactive
+    return false unless eval("0", false)
+    
+    @readline ||= begin # initialize @readline at the first invocation
+      require 'readline'
+      proc{|prompt| Readline.readline(prompt, true)}
+    rescue LoadError
+      proc{|prompt|
+        print prompt
+        $stdout.flush
+        gets.strip
+      }
+    end
+    
     while true
       cmds = []
-      while true
-        if @readline && @interactive
-          cmd = Readline.readline(prompt,true)
-        else
-          print prompt
-          $stdout.flush
-          cmd = gets.strip
+      prompt = regular_prompt
+      begin
+        while true
+          cmds << @readline.call(prompt)
+          break if complete?(cmds.join("\n"))
+          prompt = continue_prompt
         end
-        cmds << cmd
-        begin
-          if complete?(cmds.join("\n"))
-            prompt = regular_prompt
-            break
-          else
-            prompt = continue_prompt
-          end
-        rescue
-          puts "Parse error"
-          prompt = regular_prompt
-          cmds = []
-          break
-        end
+      rescue ParseError => e
+        puts e.message
+        next
       end
-      next if cmds.length == 0
+      next if cmds.empty?
       break if cmds.length == 1 && cmds[0] == "exit()"
-      break if ! eval(cmds.join("\n"),true)
+      break unless eval(cmds.join("\n"), true)
     end
     true
   end
@@ -388,7 +357,7 @@ def initialize(*args)
 #
 #Of course it would be confusing to use the shorthand notation to assign a variable named eval, echo, or any other already defined function. RinRuby would assume you were calling the function, rather than trying to assign a variable.
 #
-#When assigning an array containing differing types of variables, RinRuby will follow R’s conversion conventions. An array that contains any Strings will result in a character vector in R. If the array does not contain any Strings, but it does contain a Float or a large integer (in absolute value), then the result will be a numeric vector of Doubles in R. If there are only integers that are suffciently small (in absolute value), then the result will be a numeric vector of integers in R.
+#When assigning an array containing differing types of variables, RinRuby will follow R's conversion conventions. An array that contains any Strings will result in a character vector in R. If the array does not contain any Strings, but it does contain a Float or a large integer (in absolute value), then the result will be a numeric vector of Doubles in R. If there are only integers that are sufficiently small (in absolute value), then the result will be a numeric vector of integers in R.
 
   def assign(name, value)
      raise EngineClosed if @engine.closed?
@@ -469,23 +438,25 @@ def initialize(*args)
 #
 #* stderr: Setting stderr to true will force messages, warnings, and errors from R to be routed through stdout.  Using stderr redirection is typically not needed for the C implementation of Ruby and is thus not not enabled by default for this implementation.  It is typically necessary for jRuby and is enabled by default in this case.  This redirection works well in practice but it can lead to interleaving output which may confuse RinRuby.  In such cases, stderr redirection should not be used.  Echoing must be enabled when using stderr redirection.
 
-  def echo(enable=nil,stderr=nil)
-    if ( enable == false ) && ( stderr == true )
+  def echo(enable=nil, stderr=nil)
+    next_enabled = (enable == nil) ? @echo_enabled : (enable ? true : false)
+    next_stderr = case stderr
+    when nil
+      (next_enabled ? @echo_stderr : false) 
+    else
+      (stderr ? true : false)
+    end
+    
+    if (next_enabled == false) && (next_stderr == true) then # prohibited combination
       raise "You can only redirect stderr if you are echoing is enabled."
     end
-    if ( enable != nil ) && ( enable != @echo_enabled )
-      echo(nil,false) if ! enable
-      @echo_enabled = ! @echo_enabled
-    end
-    if @echo_enabled && ( stderr != nil ) && ( stderr != @echo_stderr )
-      @echo_stderr = ! @echo_stderr
-      if @echo_stderr
-        eval "sink(stdout(),type='message')"
-      else
-        eval "sink(type='message')"
-      end
-    end
-    [ @echo_enabled, @echo_stderr ]
+    
+    eval "sink(#{'stdout(),' if next_stderr}type='message')" if @echo_stderr != next_stderr
+    [@echo_enabled = next_enabled, @echo_stderr = next_stderr]
+  end
+  
+  def echo_enabled=(enable)
+    echo(enable).first
   end
 
   private
@@ -508,7 +479,6 @@ def initialize(*args)
   
   RinRuby_Eval_Flag = "RINRUBY.EVAL.FLAG"
   RinRuby_Stderr_Flag = "RINRUBY.STDERR.FLAG"
-  RinRuby_Exit_Flag = "RINRUBY.EXIT.FLAG"
   
   RinRuby_NA_R_Integer  = -(1 << 31)
   RinRuby_Max_R_Integer =  (1 << 31) - 1
@@ -533,6 +503,8 @@ def initialize(*args)
         #{RinRuby_Env}$session(function(con){
           reader(function(vtype, len){
             invisible(readBin(con, vtype(), len, endian="#{RinRuby_Endian}"))
+          }, function(bytes){
+            invisible(readChar(con, bytes, useBytes = T))
           })
         })
       }
@@ -549,11 +521,7 @@ def initialize(*args)
       })
     }
     #{RinRuby_Env}$assignable <- function(var) {
-      #{RinRuby_Env}$session.write(function(write){
-        write(ifelse(inherits(try(
-            eval(parse(text=paste(var, '<- 1'))),
-            silent=TRUE), "try-error"), 0L, 1L))
-      })
+      #{RinRuby_Env}$parseable(paste0("assign(", var, ", NA)"))
     }
     EOF
   end
@@ -561,7 +529,7 @@ def initialize(*args)
   def r_rinruby_get_value
     @writer.puts <<-EOF
     #{RinRuby_Env}$get_value <- function() {
-      #{RinRuby_Env}$session.read(function(read){
+      #{RinRuby_Env}$session.read(function(read, readchar){
         value <- NULL
         type <- read(integer, 1)
         length <- read(integer, 1)
@@ -578,9 +546,9 @@ def initialize(*args)
         } else if ( type == #{RinRuby_Type_Character} ) {
           value <- character(length)
           for(i in seq_len(length)){
-            value[[i]] <- read(character, 1)
+            nbytes <- read(integer, 1)
+            value[[i]] <- ifelse(nbytes >= 0, readchar(nbytes), NA)
           }
-          value[na.indices()] <- NA
         }
         value
       })
@@ -614,7 +582,7 @@ def initialize(*args)
           if( is.na(i) ){
             write(as.integer(NA))
           }else{
-            write(nchar(i), i)
+            write(nchar(i, type="bytes"), i)
           }
         }
       } else {
@@ -774,18 +742,16 @@ def initialize(*args)
         }
       end
       def send(value, io)
-        # Character format: data_size, data, ..., na_index_size, na_index, ...
+        # Character format: data_size, data1_bytes, data1, data2_bytes, data2, ...
         io.write([value.size].pack('l'))
-        nils = []
-        value.each.with_index{|x, i|
-          io.write(if x == nil then
-            nils << i
-            ''
+        value.each{|x|
+          if x then
+            bytes = x.to_s.bytes # TODO: taking care of encoding difference
+            io.write(([bytes.size] + bytes).pack('lC*')) # .bytes.pack("C*").encoding equals to "ASCII-8BIT"
           else
-            x.to_s
-          end + [0].pack('C'))
+            io.write([RinRuby_NA_R_Integer].pack('l'))
+          end
         }
-        io.write(([nils.size] + nils).pack('l*'))
         value
       end
       def receive(io)
@@ -875,15 +841,10 @@ def initialize(*args)
   public :complete?
   def assignable?(string)
     assign_engine(RinRuby_Parse_String, string)
-    res_assign, res_parse = [true, true]
     socket_session{|socket|
       @writer.puts "#{RinRuby_Env}$assignable(#{RinRuby_Parse_String})"
-      next if res_assign = (socket.read(4).unpack('l').first > 0)
-      @writer.puts "#{RinRuby_Env}$parseable(#{RinRuby_Parse_String})"
-      res_parse = (socket.read(4).unpack('l').first > 0)
+      socket.read(4).unpack('l').first > 0
     }
-    raise ParseError, "Parse error" unless res_parse
-    res_assign
   end
 
   def find_R_on_windows(cygwin)
