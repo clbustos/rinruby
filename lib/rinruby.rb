@@ -66,9 +66,9 @@ class RinRuby
   require 'socket'
 
   # Exception for closed engine
-  EngineClosed=Class.new(Exception)
+  EngineClosed=Class.new(RuntimeError)
   # Parse error
-  ParseError=Class.new(Exception)
+  ParseError=Class.new(RuntimeError)
 
   RinRuby_Env = ".RinRuby"
   RinRuby_Endian = ([1].pack("L").unpack("C*")[0] == 1) ? (:little) : (:big)
@@ -210,11 +210,12 @@ class RinRuby
 
   def eval(string, echo_override=nil)
     raise EngineClosed if @engine.closed?
-    raise ParseError, "Parse error on eval:#{string}" unless complete?(string)
     
-    @writer.puts string
-    @writer.puts "warning('#{RinRuby_Stderr_Flag}',immediate.=TRUE)" if @echo_stderr
-    @writer.puts "print('#{RinRuby_Eval_Flag}')"
+    if_passed(string, :parseable){|string_checked|
+      @writer.puts "eval(parse(text=#{string_checked}))"
+      @writer.puts "warning('#{RinRuby_Stderr_Flag}',immediate.=TRUE)" if @echo_stderr
+      @writer.puts "print('#{RinRuby_Eval_Flag}')"
+    }
     
     int_handler_orig = Signal.trap('INT'){
       @writer.print [0x03].pack('C')
@@ -360,12 +361,10 @@ class RinRuby
 #When assigning an array containing differing types of variables, RinRuby will follow R's conversion conventions. An array that contains any Strings will result in a character vector in R. If the array does not contain any Strings, but it does contain a Float or a large integer (in absolute value), then the result will be a numeric vector of Doubles in R. If there are only integers that are sufficiently small (in absolute value), then the result will be a numeric vector of integers in R.
 
   def assign(name, value)
-     raise EngineClosed if @engine.closed?
-    if assignable?(name)
-      assign_engine(name,value)
-    else
-      raise ParseError, "Parse error"
-    end
+    raise EngineClosed if @engine.closed?
+    if_passed(name, :assignable){|name_passed|
+      assign_engine(name, value)
+    }
   end
 
 #Data is copied from R to Ruby using the pull method or a short-hand equivalent. The R object x defined with an eval method can be copied to Ruby object copy_of_x as follows:
@@ -423,11 +422,9 @@ class RinRuby
 
   def pull(string, singletons=false)
     raise EngineClosed if @engine.closed?
-    if complete?(string)
-      pull_engine(string, singletons)
-    else
-      raise ParseError, "Parse error"
-    end
+    if_passed(string, :parseable){|string_passed|
+      pull_engine("get(#{string_passed})", singletons)
+    }
   end
 
 #The echo method controls whether the eval method displays output from R and, if echo is enabled, whether messages, warnings, and errors from stderr are also displayed.
@@ -798,7 +795,7 @@ class RinRuby
 
   def pull_engine(string, singletons = true)
     pull_proc = proc{|var, socket|
-      @writer.puts "#{RinRuby_Env}$pull(try(#{var}))"  
+      @writer.puts "#{RinRuby_Env}$pull(try(#{var}))"
       type = socket.read(4).unpack('l').first
       case type
       when RinRuby_Type_Unknown
@@ -831,20 +828,23 @@ class RinRuby
     }
   end
 
-  def complete?(string)
+  def if_passed(string, func = :parseable, &then_proc)
     assign_engine(RinRuby_Parse_String, string)
-    socket_session{|socket|
-      @writer.puts "#{RinRuby_Env}$parseable(#{RinRuby_Parse_String})"
+    res = socket_session{|socket|
+      @writer.puts "#{RinRuby_Env}$#{func}(#{RinRuby_Parse_String})"
       socket.read(4).unpack('l').first > 0
     }
+    raise ParseError, "Parse error: #{string}" unless res
+    then_proc ? then_proc.call(RinRuby_Parse_String) : true
+  end
+  
+  def complete?(string)
+    if_passed(string) rescue false
   end
   public :complete?
+  
   def assignable?(string)
-    assign_engine(RinRuby_Parse_String, string)
-    socket_session{|socket|
-      @writer.puts "#{RinRuby_Env}$assignable(#{RinRuby_Parse_String})"
-      socket.read(4).unpack('l').first > 0
-    }
+    if_passed(string, :assignable) rescue false
   end
 
   def find_R_on_windows(cygwin)
