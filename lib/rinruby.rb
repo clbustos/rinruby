@@ -521,11 +521,7 @@ class RinRuby
       })
     }
     #{RinRuby_Env}$assignable <- function(var) {
-      #{RinRuby_Env}$session.write(function(write){
-        write(ifelse(inherits(try(
-            eval(parse(text=paste(var, '<- 1'))),
-            silent=TRUE), "try-error"), 0L, 1L))
-      })
+      #{RinRuby_Env}$parseable(paste0("assign(", var, ", NA)"))
     }
     EOF
   end
@@ -845,15 +841,10 @@ class RinRuby
   public :complete?
   def assignable?(string)
     assign_engine(RinRuby_Parse_String, string)
-    res_assign, res_parse = [true, true]
     socket_session{|socket|
       @writer.puts "#{RinRuby_Env}$assignable(#{RinRuby_Parse_String})"
-      next if res_assign = (socket.read(4).unpack('l').first > 0)
-      @writer.puts "#{RinRuby_Env}$parseable(#{RinRuby_Parse_String})"
-      res_parse = (socket.read(4).unpack('l').first > 0)
+      socket.read(4).unpack('l').first > 0
     }
-    raise ParseError, "Parse error" unless res_parse
-    res_assign
   end
 
   def find_R_on_windows(cygwin)
