@@ -362,8 +362,8 @@ class RinRuby
 
   def assign(name, value)
     raise EngineClosed if @engine.closed?
-    if_assignable(name){
-      assign_engine(name, value)
+    if_assignable(name){|var|
+      assign_engine(var, value)
     }
   end
 
@@ -519,7 +519,7 @@ class RinRuby
       invisible(parsed) # return parsed expression
     }
     #{RinRuby_Env}$assignable <- function(var) {
-      parsed <- try(parse(text=paste0(var, '<- NA')), silent=TRUE)
+      parsed <- try(parse(text=paste0('do.call("<-", list(', var, ', NA))')), silent=TRUE)
       is_invalid <- inherits(parsed, "try-error") || (length(parsed) != 1L)
       #{RinRuby_Env}$session.write(function(write){
         write(ifelse(is_invalid, 0L, 1L))
@@ -768,14 +768,14 @@ class RinRuby
     end
   end
   
-  def assign_engine(name, value)
+  def assign_engine(var, value)
     original_value = value
     
-    r_exp = "#{name} <- #{RinRuby_Env}$get_value()"
+    r_exp = "do.call('<-', list(#{var}, #{RinRuby_Env}$get_value()))"
     
     if value.kind_of?(::Matrix) # assignment for matrices
-      r_exp = "#{name} <- matrix(#{RinRuby_Env}$get_value(), 
-          nrow=#{value.row_size}, ncol=#{value.column_size}, byrow=T)"
+      r_exp = "do.call('<-', list(#{var}, matrix(#{RinRuby_Env}$get_value(), 
+          nrow=#{value.row_size}, ncol=#{value.column_size}, byrow=T)))"
       value = value.row_vectors.collect{|row| row.to_a}.flatten
     elsif !value.kind_of?(Enumerable) then # check each
       value = [value]
@@ -836,7 +836,7 @@ class RinRuby
   end
 
   def if_passed(string, r_func, &then_proc)
-    assign_engine(RinRuby_Test_String, string)
+    assign_engine("quote(#{RinRuby_Test_String})", string)
     res = socket_session{|socket|
       @writer.puts "#{RinRuby_Test_Result} <- #{r_func}(#{RinRuby_Test_String})"
       socket.read(4).unpack('l').first > 0
