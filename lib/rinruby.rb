@@ -211,7 +211,7 @@ class RinRuby
   def eval(string, echo_override=nil)
     raise EngineClosed if @engine.closed?
     
-    if_passed(string, :parseable){|expr|
+    if_parseable(string){|expr|
       @writer.puts "eval(#{expr})"
       @writer.puts "warning('#{RinRuby_Stderr_Flag}',immediate.=TRUE)" if @echo_stderr
       @writer.puts "print('#{RinRuby_Eval_Flag}')"
@@ -362,7 +362,7 @@ class RinRuby
 
   def assign(name, value)
     raise EngineClosed if @engine.closed?
-    if_passed(name, :assignable){|name_passed|
+    if_assignable(name){
       assign_engine(name, value)
     }
   end
@@ -422,7 +422,7 @@ class RinRuby
 
   def pull(string, singletons=false)
     raise EngineClosed if @engine.closed?
-    if_passed(string, :parseable){|expr|
+    if_parseable(string){|expr|
       pull_engine("eval(#{expr})", singletons)
     }
   end
@@ -472,8 +472,8 @@ class RinRuby
   }
 
   RinRuby_Socket = "#{RinRuby_Env}$socket"
-  RinRuby_Parse_String = "#{RinRuby_Env}$parse.string"
-  RinRuby_Parsed_Expression = "#{RinRuby_Env}$parsed.expr"
+  RinRuby_Test_String = "#{RinRuby_Env}$test.string"
+  RinRuby_Test_Result = "#{RinRuby_Env}$test.result"
   
   RinRuby_Eval_Flag = "RINRUBY.EVAL.FLAG"
   RinRuby_Stderr_Flag = "RINRUBY.STDERR.FLAG"
@@ -516,14 +516,15 @@ class RinRuby
       #{RinRuby_Env}$session.write(function(write){
         write(ifelse(inherits(parsed, "try-error"), 0L, 1L))
       })
-      invisible(parsed)
+      invisible(parsed) # return parsed expression
     }
     #{RinRuby_Env}$assignable <- function(var) {
       parsed <- try(parse(text=paste0(var, '<- NA')), silent=TRUE)
+      is_invalid <- inherits(parsed, "try-error") || (length(parsed) != 1L)
       #{RinRuby_Env}$session.write(function(write){
-        write(ifelse(inherits(parsed, "try-error") || (length(parsed) != 1L), 0L, 1L))
+        write(ifelse(is_invalid, 0L, 1L))
       })
-      invisible(parsed)
+      invisible(ifelse(is_invalid, NA, var)) # return assignable variable name
     }
     EOF
   end
@@ -773,7 +774,8 @@ class RinRuby
     r_exp = "#{name} <- #{RinRuby_Env}$get_value()"
     
     if value.kind_of?(::Matrix) # assignment for matrices
-      r_exp = "#{name} <- matrix(#{RinRuby_Env}$get_value(), nrow=#{value.row_size}, ncol=#{value.column_size}, byrow=T)"
+      r_exp = "#{name} <- matrix(#{RinRuby_Env}$get_value(), 
+          nrow=#{value.row_size}, ncol=#{value.column_size}, byrow=T)"
       value = value.row_vectors.collect{|row| row.to_a}.flatten
     elsif !value.kind_of?(Enumerable) then # check each
       value = [value]
@@ -833,24 +835,26 @@ class RinRuby
     }
   end
 
-  def if_passed(string, func = :parseable, &then_proc)
-    assign_engine(RinRuby_Parse_String, string)
+  def if_passed(string, r_func, &then_proc)
+    assign_engine(RinRuby_Test_String, string)
     res = socket_session{|socket|
-      @writer.puts "#{RinRuby_Parsed_Expression} <- #{RinRuby_Env}$#{func}(#{RinRuby_Parse_String})"
+      @writer.puts "#{RinRuby_Test_Result} <- #{r_func}(#{RinRuby_Test_String})"
       socket.read(4).unpack('l').first > 0
     }
     raise ParseError, "Parse error: #{string}" unless res
-    then_proc ? then_proc.call(RinRuby_Parsed_Expression) : true
+    then_proc ? then_proc.call(RinRuby_Test_Result) : true
+  end
+  def if_parseable(string, &then_proc)
+    if_passed(string, "#{RinRuby_Env}$parseable", &then_proc)
+  end
+  def if_assignable(name, &then_proc)
+    if_passed(name, "#{RinRuby_Env}$assignable", &then_proc)
   end
   
   def complete?(string)
-    if_passed(string) rescue false
+    if_parseable(string) rescue false
   end
   public :complete?
-  
-  def assignable?(string)
-    if_passed(string, :assignable) rescue false
-  end
 
   def find_R_on_windows(cygwin)
     path = '?'
