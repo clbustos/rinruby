@@ -66,9 +66,9 @@ class RinRuby
   require 'socket'
 
   # Exception for closed engine
-  EngineClosed=Class.new(Exception)
+  EngineClosed=Class.new(RuntimeError)
   # Parse error
-  ParseError=Class.new(Exception)
+  ParseError=Class.new(RuntimeError)
 
   RinRuby_Env = ".RinRuby"
   RinRuby_Endian = ([1].pack("L").unpack("C*")[0] == 1) ? (:little) : (:big)
@@ -210,11 +210,12 @@ class RinRuby
 
   def eval(string, echo_override=nil)
     raise EngineClosed if @engine.closed?
-    raise ParseError, "Parse error on eval:#{string}" unless complete?(string)
     
-    @writer.puts string
-    @writer.puts "warning('#{RinRuby_Stderr_Flag}',immediate.=TRUE)" if @echo_stderr
-    @writer.puts "print('#{RinRuby_Eval_Flag}')"
+    if_parseable(string){|expr|
+      @writer.puts "eval(#{expr})"
+      @writer.puts "warning('#{RinRuby_Stderr_Flag}',immediate.=TRUE)" if @echo_stderr
+      @writer.puts "print('#{RinRuby_Eval_Flag}')"
+    }
     
     int_handler_orig = Signal.trap('INT'){
       @writer.print [0x03].pack('C')
@@ -360,12 +361,10 @@ class RinRuby
 #When assigning an array containing differing types of variables, RinRuby will follow R's conversion conventions. An array that contains any Strings will result in a character vector in R. If the array does not contain any Strings, but it does contain a Float or a large integer (in absolute value), then the result will be a numeric vector of Doubles in R. If there are only integers that are sufficiently small (in absolute value), then the result will be a numeric vector of integers in R.
 
   def assign(name, value)
-     raise EngineClosed if @engine.closed?
-    if assignable?(name)
-      assign_engine(name,value)
-    else
-      raise ParseError, "Parse error"
-    end
+    raise EngineClosed if @engine.closed?
+    if_assignable(name){|var|
+      assign_engine(var, value)
+    }
   end
 
 #Data is copied from R to Ruby using the pull method or a short-hand equivalent. The R object x defined with an eval method can be copied to Ruby object copy_of_x as follows:
@@ -423,11 +422,9 @@ class RinRuby
 
   def pull(string, singletons=false)
     raise EngineClosed if @engine.closed?
-    if complete?(string)
-      pull_engine(string, singletons)
-    else
-      raise ParseError, "Parse error"
-    end
+    if_parseable(string){|expr|
+      pull_engine("eval(#{expr})", singletons)
+    }
   end
 
 #The echo method controls whether the eval method displays output from R and, if echo is enabled, whether messages, warnings, and errors from stderr are also displayed.
@@ -475,7 +472,8 @@ class RinRuby
   }
 
   RinRuby_Socket = "#{RinRuby_Env}$socket"
-  RinRuby_Parse_String = "#{RinRuby_Env}$parse.string"
+  RinRuby_Test_String = "#{RinRuby_Env}$test.string"
+  RinRuby_Test_Result = "#{RinRuby_Env}$test.result"
   
   RinRuby_Eval_Flag = "RINRUBY.EVAL.FLAG"
   RinRuby_Stderr_Flag = "RINRUBY.STDERR.FLAG"
@@ -514,14 +512,19 @@ class RinRuby
   def r_rinruby_check
     @writer.puts <<-EOF
     #{RinRuby_Env}$parseable <- function(var) {
+      parsed <- try(parse(text=var), silent=TRUE)
       #{RinRuby_Env}$session.write(function(write){
-        write(ifelse(inherits(try(
-            parse(text=var), 
-            silent=TRUE), "try-error"), 0L, 1L))
+        write(ifelse(inherits(parsed, "try-error"), 0L, 1L))
       })
+      invisible(parsed) # return parsed expression
     }
     #{RinRuby_Env}$assignable <- function(var) {
-      #{RinRuby_Env}$parseable(paste0("assign(", var, ", NA)"))
+      parsed <- try(parse(text=paste0('do.call("<-", list(', var, ', NA))')), silent=TRUE)
+      is_invalid <- inherits(parsed, "try-error") || (length(parsed) != 1L)
+      #{RinRuby_Env}$session.write(function(write){
+        write(ifelse(is_invalid, 0L, 1L))
+      })
+      invisible(ifelse(is_invalid, NA, var)) # return assignable variable name
     }
     EOF
   end
@@ -765,13 +768,14 @@ class RinRuby
     end
   end
   
-  def assign_engine(name, value)
+  def assign_engine(var, value)
     original_value = value
     
-    r_exp = "#{name} <- #{RinRuby_Env}$get_value()"
+    r_exp = "do.call('<-', list(#{var}, #{RinRuby_Env}$get_value()))"
     
     if value.kind_of?(::Matrix) # assignment for matrices
-      r_exp = "#{name} <- matrix(#{RinRuby_Env}$get_value(), nrow=#{value.row_size}, ncol=#{value.column_size}, byrow=T)"
+      r_exp = "do.call('<-', list(#{var}, matrix(#{RinRuby_Env}$get_value(), 
+          nrow=#{value.row_size}, ncol=#{value.column_size}, byrow=T)))"
       value = value.row_vectors.collect{|row| row.to_a}.flatten
     elsif !value.kind_of?(Enumerable) then # check each
       value = [value]
@@ -798,7 +802,7 @@ class RinRuby
 
   def pull_engine(string, singletons = true)
     pull_proc = proc{|var, socket|
-      @writer.puts "#{RinRuby_Env}$pull(try(#{var}))"  
+      @writer.puts "#{RinRuby_Env}$pull(try(#{var}))"
       type = socket.read(4).unpack('l').first
       case type
       when RinRuby_Type_Unknown
@@ -831,21 +835,26 @@ class RinRuby
     }
   end
 
-  def complete?(string)
-    assign_engine(RinRuby_Parse_String, string)
-    socket_session{|socket|
-      @writer.puts "#{RinRuby_Env}$parseable(#{RinRuby_Parse_String})"
+  def if_passed(string, r_func, &then_proc)
+    assign_engine("quote(#{RinRuby_Test_String})", string)
+    res = socket_session{|socket|
+      @writer.puts "#{RinRuby_Test_Result} <- #{r_func}(#{RinRuby_Test_String})"
       socket.read(4).unpack('l').first > 0
     }
+    raise ParseError, "Parse error: #{string}" unless res
+    then_proc ? then_proc.call(RinRuby_Test_Result) : true
+  end
+  def if_parseable(string, &then_proc)
+    if_passed(string, "#{RinRuby_Env}$parseable", &then_proc)
+  end
+  def if_assignable(name, &then_proc)
+    if_passed(name, "#{RinRuby_Env}$assignable", &then_proc)
+  end
+  
+  def complete?(string)
+    if_parseable(string) rescue false
   end
   public :complete?
-  def assignable?(string)
-    assign_engine(RinRuby_Parse_String, string)
-    socket_session{|socket|
-      @writer.puts "#{RinRuby_Env}$assignable(#{RinRuby_Parse_String})"
-      socket.read(4).unpack('l').first > 0
-    }
-  end
 
   def find_R_on_windows(cygwin)
     path = '?'
