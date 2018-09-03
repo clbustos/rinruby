@@ -211,8 +211,8 @@ class RinRuby
   def eval(string, echo_override=nil)
     raise EngineClosed if @engine.closed?
     
-    if_passed(string, :parseable){|string_checked|
-      @writer.puts "eval(parse(text=#{string_checked}))"
+    if_passed(string, :parseable){|expr|
+      @writer.puts "eval(#{expr})"
       @writer.puts "warning('#{RinRuby_Stderr_Flag}',immediate.=TRUE)" if @echo_stderr
       @writer.puts "print('#{RinRuby_Eval_Flag}')"
     }
@@ -422,8 +422,8 @@ class RinRuby
 
   def pull(string, singletons=false)
     raise EngineClosed if @engine.closed?
-    if_passed(string, :parseable){|string_passed|
-      pull_engine("get(#{string_passed})", singletons)
+    if_passed(string, :parseable){|expr|
+      pull_engine("eval(#{expr})", singletons)
     }
   end
 
@@ -473,6 +473,7 @@ class RinRuby
 
   RinRuby_Socket = "#{RinRuby_Env}$socket"
   RinRuby_Parse_String = "#{RinRuby_Env}$parse.string"
+  RinRuby_Parsed_Expression = "#{RinRuby_Env}$parsed.expr"
   
   RinRuby_Eval_Flag = "RINRUBY.EVAL.FLAG"
   RinRuby_Stderr_Flag = "RINRUBY.STDERR.FLAG"
@@ -511,14 +512,18 @@ class RinRuby
   def r_rinruby_check
     @writer.puts <<-EOF
     #{RinRuby_Env}$parseable <- function(var) {
+      parsed <- try(parse(text=var), silent=TRUE)
       #{RinRuby_Env}$session.write(function(write){
-        write(ifelse(inherits(try(
-            parse(text=var), 
-            silent=TRUE), "try-error"), 0L, 1L))
+        write(ifelse(inherits(parsed, "try-error"), 0L, 1L))
       })
+      invisible(parsed)
     }
     #{RinRuby_Env}$assignable <- function(var) {
-      #{RinRuby_Env}$parseable(paste0("assign(", var, ", NA)"))
+      parsed <- try(parse(text=paste0(var, '<- NA')), silent=TRUE)
+      #{RinRuby_Env}$session.write(function(write){
+        write(ifelse(inherits(parsed, "try-error") || (length(parsed) != 1L), 0L, 1L))
+      })
+      invisible(parsed)
     }
     EOF
   end
@@ -831,11 +836,11 @@ class RinRuby
   def if_passed(string, func = :parseable, &then_proc)
     assign_engine(RinRuby_Parse_String, string)
     res = socket_session{|socket|
-      @writer.puts "#{RinRuby_Env}$#{func}(#{RinRuby_Parse_String})"
+      @writer.puts "#{RinRuby_Parsed_Expression} <- #{RinRuby_Env}$#{func}(#{RinRuby_Parse_String})"
       socket.read(4).unpack('l').first > 0
     }
     raise ParseError, "Parse error: #{string}" unless res
-    then_proc ? then_proc.call(RinRuby_Parse_String) : true
+    then_proc ? then_proc.call(RinRuby_Parsed_Expression) : true
   end
   
   def complete?(string)
