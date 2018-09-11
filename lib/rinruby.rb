@@ -211,8 +211,8 @@ class RinRuby
   def eval(string, echo_override=nil)
     raise EngineClosed if @engine.closed?
     
-    if_parseable(string){|expr|
-      @writer.puts "eval(#{expr})"
+    if_parseable(string){|fun|
+      @writer.puts "#{fun}()"
       @writer.puts "warning('#{RinRuby_Stderr_Flag}',immediate.=TRUE)" if @echo_stderr
       @writer.puts "print('#{RinRuby_Eval_Flag}')"
     }
@@ -362,8 +362,8 @@ class RinRuby
 
   def assign(name, value)
     raise EngineClosed if @engine.closed?
-    if_assignable(name){|var|
-      assign_engine(var, value)
+    if_assignable(name){|fun|
+      assign_engine(fun, value)
     }
   end
 
@@ -422,8 +422,8 @@ class RinRuby
 
   def pull(string, singletons=false)
     raise EngineClosed if @engine.closed?
-    if_parseable(string){|expr|
-      pull_engine("eval(#{expr})", singletons)
+    if_parseable(string){|fun|
+      pull_engine("#{fun}()", singletons)
     }
   end
 
@@ -516,21 +516,29 @@ class RinRuby
       #{RinRuby_Env}$session.write(function(write){
         write(ifelse(inherits(parsed, "try-error"), 0L, 1L))
       })
-      invisible(parsed) # return parsed expression
+      invisible(function(){eval(parsed, env=globalenv())}) # return evaluating function
     }
     #{RinRuby_Env}$assignable <- function(var) {
-      parsed <- try(parse(text=paste0('do.call("<-", list(', var, ', NA))')), silent=TRUE)
+      parsed <- try(parse(text=paste0(var, ' <<- v')), silent=TRUE)
       is_invalid <- inherits(parsed, "try-error") || (length(parsed) != 1L)
       #{RinRuby_Env}$session.write(function(write){
         write(ifelse(is_invalid, 0L, 1L))
       })
-      invisible(ifelse(is_invalid, NA, var)) # return assignable variable name
+      invisible(function(v){eval(parsed)}) # return assigning function
     }
     EOF
   end
   # Create function on ruby to get values
   def r_rinruby_get_value
     @writer.puts <<-EOF
+    #{RinRuby_Env}$assign <- function(var) {
+      invisible(if(is.function(var)){
+        var
+      }else{
+        parsed <- parse(text=paste0(var, " <<- v"))
+        function(v){eval(parsed)}
+      })
+    }
     #{RinRuby_Env}$get_value <- function() {
       #{RinRuby_Env}$session.read(function(read, readchar){
         value <- NULL
@@ -771,11 +779,12 @@ class RinRuby
   def assign_engine(var, value)
     original_value = value
     
-    r_exp = "do.call('<-', list(#{var}, #{RinRuby_Env}$get_value()))"
+    r_assginer = "#{RinRuby_Env}$assign(#{var})"
+    r_exp = "#{r_assginer}(#{RinRuby_Env}$get_value())"
     
     if value.kind_of?(::Matrix) # assignment for matrices
-      r_exp = "do.call('<-', list(#{var}, matrix(#{RinRuby_Env}$get_value(), 
-          nrow=#{value.row_size}, ncol=#{value.column_size}, byrow=T)))"
+      r_exp = "#{r_assginer}(matrix(#{RinRuby_Env}$get_value(), " \
+          "nrow=#{value.row_size}, ncol=#{value.column_size}, byrow=T))"
       value = value.row_vectors.collect{|row| row.to_a}.flatten
     elsif !value.kind_of?(Enumerable) then # check each
       value = [value]
@@ -836,7 +845,7 @@ class RinRuby
   end
 
   def if_passed(string, r_func, &then_proc)
-    assign_engine("quote(#{RinRuby_Test_String})", string)
+    assign_engine("'#{RinRuby_Test_String}'", string)
     res = socket_session{|socket|
       @writer.puts "#{RinRuby_Test_Result} <- #{r_func}(#{RinRuby_Test_String})"
       socket.read(4).unpack('l').first > 0

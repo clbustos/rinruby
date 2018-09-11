@@ -191,6 +191,13 @@ shared_examples 'RinRubyCore' do
         }
       end
       
+      it "should pull partially" do
+        subject.eval("x<-c(1L,2L,-5L,-3L,NA)")
+        [1,2,-5,-3,nil].each.with_index{|v, i|
+          expect(subject.pull("x[[#{i + 1}]]")).to eql(v)
+        }
+      end
+      
       it "should be the same using pull than R# methods" do
         subject.eval("x <- #{rand(100000000)}")
         expect(subject.pull("x")).to eql(subject.x)
@@ -276,6 +283,14 @@ shared_examples 'RinRubyCore' do
           subject.assign("x", x)
           (cmp_proc || proc{|a, b| expect(a).to eql(b)}).call(subject.pull('x'), x)
         }        
+      end
+      
+      it "should assign partially" do
+        x = [1, 2, -5, -3, nil]
+        subject.assign("x", x)
+        expect(subject.pull('x')).to eql(x)
+        subject.assign("x[[3]]", x[2] *= 10)
+        expect(subject.pull('x')).to eql(x)
       end
       
       it "should be the same using assign than R#= methods" do
