@@ -512,11 +512,19 @@ class RinRuby
   def r_rinruby_check
     @writer.puts <<-EOF
     #{RinRuby_Env}$parseable <- function(var) {
-      parsed <- try(parse(text=var), silent=TRUE)
+      src <- srcfilecopy("<text>", lines=var, isFile=F)
+      parsed <- try(parse(text=var, srcfile=src, keep.source=T), silent=TRUE)
+      res <- function(){eval(parsed, env=globalenv())} # return evaluating function
+      notification <- if(inherits(parsed, "try-error")){
+        attributes(res)$parse.data <- getParseData(src)
+        0L
+      }else{
+        1L
+      }
       #{RinRuby_Env}$session.write(function(write){
-        write(ifelse(inherits(parsed, "try-error"), 0L, 1L))
+        write(notification)
       })
-      invisible(function(){eval(parsed, env=globalenv())}) # return evaluating function
+      invisible(res)
     }
     #{RinRuby_Env}$assignable <- function(var) {
       parsed <- try(parse(text=paste0(var, ' <- .value')), silent=TRUE)
@@ -844,20 +852,27 @@ class RinRuby
     }
   end
 
-  def if_passed(string, r_func, &then_proc)
+  def if_passed(string, r_func, opt = {}, &then_proc)
     assign_engine("#{RinRuby_Env}$assign.test.string", string)
     res = socket_session{|socket|
       @writer.puts "#{RinRuby_Test_Result} <- #{r_func}(#{RinRuby_Test_String})"
       socket.read(4).unpack('l').first > 0
     }
-    raise ParseError, "Parse error: #{string}" unless res
+    unless res then
+      if opt[:error_proc] then
+        opt[:error_proc].call(RinRuby_Test_Result)
+        return false
+      else
+        raise ParseError, "Parse error: #{string}"
+      end
+    end
     then_proc ? then_proc.call(RinRuby_Test_Result) : true
   end
-  def if_parseable(string, &then_proc)
-    if_passed(string, "#{RinRuby_Env}$parseable", &then_proc)
+  def if_parseable(string, opt = {}, &then_proc)
+    if_passed(string, "#{RinRuby_Env}$parseable", opt, &then_proc)
   end
-  def if_assignable(name, &then_proc)
-    if_passed(name, "#{RinRuby_Env}$assignable", &then_proc)
+  def if_assignable(name, opt = {}, &then_proc)
+    if_passed(name, "#{RinRuby_Env}$assignable", opt, &then_proc)
   end
   
   def complete?(string)
