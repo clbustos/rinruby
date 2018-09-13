@@ -526,6 +526,15 @@ class RinRuby
       })
       invisible(res)
     }
+    #{RinRuby_Env}$last.parse.data <- function(data) {
+      if(nrow(data) == 0L){
+        c(0L, 0L, 0L)
+      }else{
+        endline <- data[max(data$line2) == data$line2, ]
+        last.item <- endline[max(data$col2) == data$col2, ]
+        eval(substitute(c(line2, col2, token == "';'"), last.item)) 
+      }
+    }
     #{RinRuby_Env}$assignable <- function(var) {
       parsed <- try(parse(text=paste0(var, ' <- .value')), silent=TRUE)
       is_invalid <- inherits(parsed, "try-error") || (length(parsed) != 1L)
@@ -876,7 +885,25 @@ class RinRuby
   end
   
   def complete?(string)
-    if_parseable(string) rescue false
+    if_parseable(string, {
+      :error_proc => proc{|var|
+        # extract last parsed position
+        l2, c2, is_separator = pull_engine(
+            "#{RinRuby_Env}$last.parse.data(attr(#{var}, 'parse.data'))")
+        
+        # detect unrecoverable error
+        lines = string.lines
+        l2_max = lines.size + is_separator
+        while (l2 > 0) and (l2 <= l2_max) # parse completion is before or on the last line
+          end_line = lines[l2 - 1]
+          break if (l2 == l2_max) and (end_line[c2..-1] =~ /^\s*$/)
+          raise ParseError, <<-__TEXT__
+Unrecoverable parse error: #{end_line}
+                           #{' ' * (c2 - 1)}^...
+          __TEXT__
+        end
+      }
+    })
   end
   public :complete?
 
