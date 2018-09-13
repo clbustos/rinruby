@@ -270,26 +270,24 @@ class RinRuby
       proc{|prompt|
         print prompt
         $stdout.flush
-        gets.strip
+        gets.strip rescue nil
       }
     end
     
+    cmds = []
     while true
-      cmds = []
-      prompt = regular_prompt
-      begin
-        while true
-          cmds << @readline.call(prompt)
-          break if complete?(cmds.join("\n"))
-          prompt = continue_prompt
+      cmds << @readline.call(cmds.empty? ? regular_prompt : continue_prompt)
+      if cmds[-1] then # the last "nil" input suspend current stack
+        break if /^\s*exit\s*\(\s*\)\s*$/ =~ cmds[0]
+        begin
+          cmds_str = cmds.join("\n")
+          next unless complete?(cmds_str)
+          break unless eval(cmds_str, true)
+        rescue ParseError => e
+          puts e.message
         end
-      rescue ParseError => e
-        puts e.message
-        next
       end
-      next if cmds.empty?
-      break if cmds.length == 1 && cmds[0] == "exit()"
-      break unless eval(cmds.join("\n"), true)
+      cmds = []
     end
     true
   end
