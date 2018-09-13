@@ -60,17 +60,33 @@ shared_examples 'RinRubyCore' do
       it {is_expected.to respond_to(:pull)}
       it {is_expected.to respond_to(:quit)}
       it {is_expected.to respond_to(:echo)}
-      it "return correct values for complete?" do
-        expect(subject.eval("x<-1")).to be_truthy
+      it "return true for complete? for correct expressions" do
+        ["", "x<-1", "x<-\n1", "'123\n456'"].each{|str|
+          expect(subject.complete?(str)).to be true
+        }
       end
       it "return false for complete? for incorrect expressions" do
-        expect(subject.complete?("x<-")).to be_falsy
+        ["x<-", "'123\n"].each{|str|
+          expect(subject.complete?(str)).to be false
+        }
       end
-      it "correct eval should return true" do 
-        expect(subject.complete?("x<-1")).to be_truthy
+      it "raise error for complete? for unrecoverable expression" do
+        [";", "x<-;"].each{|str|
+          expect{subject.complete?(str)}.to raise_error(RinRuby::ParseError)
+        }
+      end
+      it "correct eval should return true" do
+        ["", "x<-1", "x<-\n1", "'123\n456'"].each{|str|
+          expect(subject.eval(str)).to be_truthy
+        }
       end
       it "incorrect eval should raise an ParseError" do
-        expect{subject.eval("x<-")}.to raise_error(RinRuby::ParseError)
+        [
+          "x<-", "'123\n", # incomplete
+          ";", "x<-;", # unrecoverable
+        ].each{|str|
+          expect{subject.eval(str)}.to raise_error(RinRuby::ParseError)
+        }
       end
     end
     
