@@ -60,6 +60,7 @@ shared_examples 'RinRubyCore' do
       it {is_expected.to respond_to(:pull)}
       it {is_expected.to respond_to(:quit)}
       it {is_expected.to respond_to(:echo)}
+      it {is_expected.to respond_to(:prompt)}
       it "return true for complete? for correct expressions" do
         ["", "x<-1", "x<-\n1", "'123\n456'"].each{|str|
           expect(subject.complete?(str)).to be true
@@ -318,7 +319,47 @@ shared_examples 'RinRubyCore' do
       it "should raise an ArgumentError error on setter with 0 parameters" do
         expect{subject.unknown_method=() }.to raise_error(ArgumentError)
       end
-    end 
+    end
+  end
+  
+  context "on prompt" do
+    let(:params){
+      super().merge({:interactive => true})
+    }
+    let(:input){@input ||= []}
+    before(:each){
+      allow(Readline).to receive(:readline){|prompt, add_hist|
+        print(prompt)
+        input.shift
+      } if defined?(Readline)
+      allow(r).to receive(:gets){input.shift}
+    }
+    it "should exit with exit() input" do
+      ['exit()', ' exit ( ) '].each{|str|
+        input.replace([str])
+        expect{r.prompt}.to output(/^> /).to_stdout
+      }
+    end
+    it "should respond normally with correct inputs" do
+      [
+        [['1'], "> [1] 1"],
+        [['1 +', '2'], "> + [1] 3"],
+        [['a <- 1'], "> "],
+        [['a <-', '1'], "> + "],
+      ].each{|src, dst|
+        input.replace(src + ['exit()'])
+        expect{r.prompt}.to output(/^#{Regexp::escape(dst)}/).to_stdout
+      }
+    end
+    it "should print error gently with incorrect inputs" do
+      [
+        ['1 +;'],
+        ['a <-;'],
+      ].each{|src|
+        input.replace(src + ['exit()'])
+        expect{r.prompt}.to output(/Unrecoverable parse error/).to_stdout
+      }
+    end
   end
   
   context "on quit" do
