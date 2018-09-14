@@ -148,14 +148,14 @@ class RinRuby
     @writer = @reader = @engine = IO.popen(cmd,"w+")
     raise "Engine closed" if @engine.closed?
     
+    # Echo setup; redirect error messages on the Java platform
+    (@platform =~ /.*-java/) ? echo(true, true) : echo()
+    
     @writer.puts <<-EOF
       assign("#{RinRuby_Env}", new.env(), baseenv())
     EOF
     @socket = nil
     [:socket_io, :assign, :pull, :check].each{|fname| self.send("r_rinruby_#{fname}")}
-    
-    # Echo setup; redirect error messages on the Java platform
-    (@platform =~ /.*-java/) ? echo(true, true) : echo()      
   end
 
 #The quit method will properly close the bridge between Ruby and R, freeing up system resources. This method does not need to be run when a Ruby script ends.
@@ -446,7 +446,9 @@ class RinRuby
       raise "You can only redirect stderr if you are echoing is enabled."
     end
     
-    eval "sink(#{'stdout(),' if next_stderr}type='message')" if @echo_stderr != next_stderr
+    @writer.puts(<<-__TEXT__) if @echo_stderr != next_stderr
+      sink(#{'stdout(),' if next_stderr}type='message')
+    __TEXT__
     [@echo_enabled = next_enabled, @echo_stderr = next_stderr]
   end
   
