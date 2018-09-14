@@ -142,7 +142,7 @@ class RinRuby
     @executable ||= ( @platform =~ /windows/ ) ? find_R_on_windows(@platform =~ /cygwin/) : 'R'
     
     platform_options = []
-    platform_options << ( ( @platform =~ /windows/ ) ? '--ess' : '--interactive' ) if @interactive
+    platform_options += ( ( @platform =~ /windows/ ) ? ['--ess'] : ['--interactive'] ) if @interactive
     
     cmd = %Q<#{executable} #{platform_options.join(' ')} --slave>
     @writer = @reader = @engine = IO.popen(cmd,"w+")
@@ -260,7 +260,7 @@ class RinRuby
 #* continue_prompt: This is the string used to denote R's prompt for an incomplete statement (such as a multiple for loop).
 
   def prompt(regular_prompt="> ", continue_prompt="+ ")
-    raise "The 'prompt' method only available in 'interactive' mode" unless @interactive
+    warn "'interactive' mode is off in this session " unless @interactive
     return false unless eval("0", false)
     
     @readline ||= begin # initialize @readline at the first invocation
@@ -446,7 +446,7 @@ class RinRuby
       raise "You can only redirect stderr if you are echoing is enabled."
     end
     
-    @writer.puts(<<-__TEXT__) if @echo_stderr != next_stderr
+    @writer.print(<<-__TEXT__) if @echo_stderr != next_stderr
       sink(#{'stdout(),' if next_stderr}type='message')
     __TEXT__
     [@echo_enabled = next_enabled, @echo_stderr = next_stderr]
@@ -484,7 +484,7 @@ class RinRuby
   #:startdoc:
 
   def r_rinruby_socket_io
-    @writer.puts <<-EOF
+    @writer.print <<-EOF
       #{RinRuby_Socket} <- NULL
       #{RinRuby_Env}$session <- function(f){
         invisible(f(#{RinRuby_Socket}))
@@ -510,7 +510,7 @@ class RinRuby
   end
   
   def r_rinruby_check
-    @writer.puts <<-EOF
+    @writer.print <<-EOF
     #{RinRuby_Env}$parseable <- function(var) {
       src <- srcfilecopy("<text>", lines=var, isFile=F)
       parsed <- try(parse(text=var, srcfile=src, keep.source=T), silent=TRUE)
@@ -547,7 +547,7 @@ class RinRuby
   end
   # Create function on ruby to get values
   def r_rinruby_assign
-    @writer.puts <<-EOF
+    @writer.print <<-EOF
     #{RinRuby_Env}$assign <- function(var) {
       expr <- parse(text=paste0(var, " <- #{RinRuby_Env}$.value"))
       invisible(function(.value){
@@ -586,7 +586,7 @@ class RinRuby
   end
 
   def r_rinruby_pull
-    @writer.puts <<-EOF
+    @writer.print <<-EOF
 #{RinRuby_Env}$pull <- function(var){
   #{RinRuby_Env}$session.write(function(write){
     if ( inherits(var ,"try-error") ) {
@@ -628,11 +628,12 @@ class RinRuby
     # TODO check still available connection?
     unless socket then
       t = Thread::new{socket = @server_socket.accept}
-      @writer.puts <<-EOF
-        #{RinRuby_Socket} <- socketConnection(
+      @writer.print <<-EOF
+        #{RinRuby_Socket} <- socketConnection( \
             "#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")
-        #{"on.exit(close(#{RinRuby_Socket}, add = T))" if @opts[:persistent]}
       EOF
+      @writer.puts(
+          "on.exit(close(#{RinRuby_Socket}, add = T))") if @opts[:persistent]
       t.join
     end
     keep_socket = @opts[:persistent]
@@ -647,8 +648,8 @@ class RinRuby
         @socket = socket
       else
         @socket = nil
-        @writer.puts <<-EOF
-          close(#{RinRuby_Socket})
+        @writer.print <<-EOF
+          close(#{RinRuby_Socket}); \
           #{RinRuby_Socket} <- NULL
         EOF
         socket.close

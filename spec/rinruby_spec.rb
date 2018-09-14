@@ -324,7 +324,7 @@ shared_examples 'RinRubyCore' do
   
   context "on prompt" do
     let(:params){
-      super().merge({:interactive => true})
+      super().merge({:interactive => false})
     }
     let(:input){@input ||= []}
     before(:each){
