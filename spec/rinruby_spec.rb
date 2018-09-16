@@ -22,6 +22,8 @@ shared_examples 'RinRubyCore' do
       end
       expect(r.interactive).to be_falsy
       case r.instance_variable_get(:@platform)
+      when /^windows-cygwin/ then
+        expect(r.executable).to match(/(^R|Rterm\.exe["']?)$/)
       when /^windows/ then
         expect(r.executable).to match(/Rterm\.exe["']?$/)
       else

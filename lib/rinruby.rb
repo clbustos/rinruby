@@ -142,10 +142,10 @@ class RinRuby
     @executable ||= ( @platform =~ /windows/ ) ? find_R_on_windows(@platform =~ /cygwin/) : 'R'
     
     @platform_options = []
-    @platform_options += ( ( @platform =~ /windows/ ) ? ['--ess'] : ['--no-readline', '--interactive'] ) if @interactive
+    @platform_options += ( ( @executable =~ /Rterm\.exe["']?$/ ) ? ['--ess'] : ['--no-readline', '--interactive'] ) if @interactive
     
     cmd = %Q<#{executable} #{@platform_options.join(' ')} --slave>
-    if @interactive and (@platform !~ /java|^windows(?!\-cygwin)/) then
+    if @platform_options.include?('--interactive') then
       require 'pty'
       @reader, @writer, pid = PTY::spawn("stty -echo && #{cmd}")
       @engine = @reader
@@ -896,6 +896,7 @@ Unrecoverable parse error: #{end_line}
     @writer.puts "#{fun}()"
     @writer.puts "warning('#{RinRuby_Stderr_Flag}',immediate.=TRUE)" if @echo_stderr
     @writer.puts "print('#{RinRuby_Eval_Flag}')"
+    @writer.flush
     
     int_handler_orig = Signal.trap('INT'){
       @writer.print [0x03].pack('C')
@@ -933,6 +934,7 @@ Unrecoverable parse error: #{end_line}
   end
 
   def find_R_on_windows(cygwin)
+    return 'R' if cygwin && system('which R > /dev/nul 2>&1')
     path = '?'
     for root in [ 'HKEY_LOCAL_MACHINE', 'HKEY_CURRENT_USER' ]
       if cygwin then
