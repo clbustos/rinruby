@@ -142,11 +142,49 @@ class RinRuby
     @executable ||= ( @platform =~ /windows/ ) ? find_R_on_windows(@platform =~ /cygwin/) : 'R'
     
     platform_options = []
-    platform_options += ( ( @platform =~ /windows/ ) ? ['--ess'] : ['--interactive'] ) if @interactive
+    platform_options += ( ( @platform =~ /windows/ ) ? ['--ess'] : ['--no-readline', '--interactive'] ) if @interactive
     
     cmd = %Q<#{executable} #{platform_options.join(' ')} --slave>
     @writer = @reader = @engine = IO.popen(cmd,"w+")
     raise "Engine closed" if @engine.closed?
+    
+    if @interactive
+      m = Mutex::new
+      updated = false
+      @writer_monitor = monitor = Thread::new{
+        sleep
+        while true
+          sleep(0.5)
+          next if m.synchronize{
+            if updated then 
+              updated = false
+              true
+            else
+              @writer.write_orig("\n")
+              false
+            end
+          }
+          sleep
+        end
+      }
+      ping = proc{|&b|
+        m.synchronize{
+          if monitor.stop? then
+            monitor.wakeup
+          else
+            updated = true
+          end
+          b.call
+        }
+      }
+      @writer.instance_eval{
+        @ping = ping
+        alias :write_orig :write
+        def write(str)
+          @ping.call{write_orig(str)}
+        end
+      }
+    end
     
     # Echo setup; redirect error messages on the Java platform
     (@platform =~ /.*-java/) ? echo(true, true) : echo()
