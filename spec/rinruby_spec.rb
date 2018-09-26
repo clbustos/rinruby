@@ -327,6 +327,12 @@ shared_examples 'RinRubyCore' do
       super().merge({:interactive => true})
     }
     let(:input){@input ||= []}
+    before(:all){
+      begin
+        require 'readline' 
+      rescue LoadError
+      end
+    }
     before(:each){
       allow(Readline).to receive(:readline){|prompt, add_hist|
         print(prompt)
