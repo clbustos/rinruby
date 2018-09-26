@@ -531,7 +531,7 @@ class RinRuby
         c(0L, 0L, 0L)
       }else{
         endline <- data[max(data$line2) == data$line2, ]
-        last.item <- endline[max(data$col2) == data$col2, ]
+        last.item <- endline[max(endline$col2) == endline$col2, ]
         eval(substitute(c(line2, col2, token == "';'"), last.item)) 
       }
     }

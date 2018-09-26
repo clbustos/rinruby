@@ -62,12 +62,12 @@ shared_examples 'RinRubyCore' do
       it {is_expected.to respond_to(:echo)}
       it {is_expected.to respond_to(:prompt)}
       it "return true for complete? for correct expressions" do
-        ["", "x<-1", "x<-\n1", "'123\n456'"].each{|str|
+        ["", "x<-1", "x<-\n1", "'123\n456'", "1+\n2+\n3"].each{|str|
           expect(subject.complete?(str)).to be true
         }
       end
       it "return false for complete? for incorrect expressions" do
-        ["x<-", "'123\n"].each{|str|
+        ["x<-", "'123\n", "1+\n2+\n"].each{|str|
           expect(subject.complete?(str)).to be false
         }
       end
@@ -344,6 +344,7 @@ shared_examples 'RinRubyCore' do
       [
         [['1'], "> [1] 1"],
         [['1 +', '2'], "> + [1] 3"],
+        [['1 +', '2 +', '3'], "> + + [1] 6"],
         [['a <- 1'], "> "],
         [['a <-', '1'], "> + "],
       ].each{|src, dst|
