@@ -176,7 +176,6 @@ class RinRuby
     end
   end
 
-
 #The eval instance method passes the R commands contained in the supplied string and displays any resulting plots or prints the output. For example:
 #
 #      >>  sample_size = 10
@@ -208,47 +207,21 @@ class RinRuby
 #
 #* echo_override: This argument allows one to set the echo behavior for this call only. The default for echo_override is nil, which does not override the current echo behavior.
 
-  def eval(string, echo_override=nil)
+  def eval(string, echo_override = nil)
     raise EngineClosed if @engine.closed?
     
+    echo_proc = case echo_override # echo on when echo_proc == nil
+    when Proc
+      echo_override
+    when nil
+      @echo_enabled ? nil : proc{}
+    else
+      echo_override ? nil : proc{}
+    end
+    
     if_parseable(string){|fun|
-      @writer.puts "#{fun}()"
-      @writer.puts "warning('#{RinRuby_Stderr_Flag}',immediate.=TRUE)" if @echo_stderr
-      @writer.puts "print('#{RinRuby_Eval_Flag}')"
+      eval_engine(fun, &echo_proc)
     }
-    
-    int_handler_orig = Signal.trap('INT'){
-      @writer.print [0x03].pack('C')
-      @reader.gets if @platform !~ /java/
-      Signal.trap('INT', nil) # ignore signal
-    }
-    
-    echo_proc = proc{}
-    if ((echo_override == nil) ? @echo_enabled : echo_override) then
-      echo_proc = (@platform !~ /windows/) \
-          ? proc{|line| puts line; $stdout.flush} \
-          : proc{|line| puts line}
-    end
-    
-    res = false
-    begin
-      while (line = @reader.gets)
-        # TODO I18N; force_encoding('origin').encode('UTF-8')
-        while line.chomp!; end
-        line = line[8..-1] if line[0] == 27 # delete escape sequence
-        case line
-        when "[1] \"#{RinRuby_Eval_Flag}\""
-          res = true
-          break
-        when /(?:Warning)?: #{RinRuby_Stderr_Flag}/ # "Warning" string may be localized
-          next
-        end
-        echo_proc.call(line)
-      end
-    ensure
-      Signal.trap('INT', int_handler_orig)
-    end
-    res
   end
 
 #When sending code to Ruby using an interactive prompt, this method will change the prompt to an R prompt. From the R prompt commands can be sent to R exactly as if the R program was actually running. When the user is ready to return to Ruby, then the command exit() will return the prompt to Ruby. This is the ideal situation for the explorative programmer who needs to run several lines of code in R, and see the results after each command. This is also an easy way to execute loops without the use of a here document. It should be noted that the prompt command does not work in a script, just Ruby's interactive irb.
@@ -280,9 +253,11 @@ class RinRuby
       if cmds[-1] then # the last "nil" input suspend current stack
         break if /^\s*exit\s*\(\s*\)\s*$/ =~ cmds[0]
         begin
-          cmds_str = cmds.join("\n")
-          next unless complete?(cmds_str)
-          break unless eval(cmds_str, true)
+          eval_res = false
+          next unless if_complete(cmds){|fun|
+            eval_res = eval_engine(fun)
+          }
+          break unless eval_res
         rescue ParseError => e
           puts e.message
         end
@@ -885,15 +860,14 @@ class RinRuby
     if_passed(name, "#{RinRuby_Env}$assignable", opt, &then_proc)
   end
   
-  def complete?(string)
-    if_parseable(string, {
+  def if_complete(lines, &then_proc)
+    if_parseable(lines, {
       :error_proc => proc{|var|
         # extract last parsed position
         l2, c2, is_separator = pull_engine(
             "#{RinRuby_Env}$last.parse.data(attr(#{var}, 'parse.data'))")
         
         # detect unrecoverable error
-        lines = string.lines
         l2_max = lines.size + is_separator
         while (l2 > 0) and (l2 <= l2_max) # parse completion is before or on the last line
           end_line = lines[l2 - 1]
@@ -904,9 +878,53 @@ Unrecoverable parse error: #{end_line}
           __TEXT__
         end
       }
-    })
+    }, &then_proc)
+  end
+  
+  def complete?(string)
+    if_complete(string.lines)
   end
   public :complete?
+  
+  def eval_engine(fun, &echo_proc)
+    @writer.puts "#{fun}()"
+    @writer.puts "warning('#{RinRuby_Stderr_Flag}',immediate.=TRUE)" if @echo_stderr
+    @writer.puts "print('#{RinRuby_Eval_Flag}')"
+    
+    int_handler_orig = Signal.trap('INT'){
+      @writer.print [0x03].pack('C')
+      @reader.gets if @platform !~ /java/
+      Signal.trap('INT', nil) # ignore signal
+    }
+    
+    echo_proc ||= proc{
+      need_flush = (@platform !~ /windows/)
+      proc{|line|
+        line = line[8..-1] if line[0] == 27 # delete escape sequence
+        while line.chomp!; end
+        puts line
+        $stdout.flush if need_flush
+      }
+    }.call
+    
+    res = false
+    begin
+      while (line = @reader.gets)
+        # TODO I18N; force_encoding('origin').encode('UTF-8')
+        case line
+        when /\[1\] \"#{RinRuby_Eval_Flag}\"/
+          res = true
+          break
+        when /(?:Warning)?: #{RinRuby_Stderr_Flag}/ # "Warning" string may be localized
+          next
+        end
+        echo_proc.call(line)
+      end
+    ensure
+      Signal.trap('INT', int_handler_orig)
+    end
+    res
+  end
 
   def find_R_on_windows(cygwin)
     path = '?'
