@@ -142,29 +142,33 @@ class RinRuby
     @executable ||= ( @platform =~ /windows/ ) ? find_R_on_windows(@platform =~ /cygwin/) : 'R'
     
     @platform_options = []
-    @platform_options += ( ( @executable =~ /Rterm\.exe["']?$/ ) ? ['--ess'] : ['--no-readline', '--interactive'] ) if @interactive
+    if @interactive then
+      if @executable =~ /Rterm\.exe["']?$/ then
+        @platform_options += ['--ess']
+      elsif @platform !~ /java$/ then
+        # intentionally interactive off under java
+        @platform_options += ['--no-readline', '--interactive']
+      end
+    end
     
     cmd = %Q<#{executable} #{@platform_options.join(' ')} --slave>
     if @platform_options.include?('--interactive') then
       require 'pty'
-      @reader, @writer, pid = PTY::spawn("stty -echo && #{cmd}")  
+      @reader, @writer, pid = PTY::spawn("stty -echo && #{cmd}")
     else
       require 'open3'
-      @writer, @reader, other = *Open3::popen3(cmd)
-      #@writer = @reader = IO::popen(cmd, 'w+')
+      @writer, @reader, *other = *Open3::popen3(cmd)
     end
     raise EngineClosed if (@reader.closed? || @writer.closed?)
-    
-    # Echo setup; redirect error messages on the Java platform
-    (@platform =~ /.*-java/) ? echo(true, true) : echo()
     
     @writer.puts <<-EOF
       assign("#{RinRuby_Env}", new.env(), baseenv())
     EOF
     @socket = nil
     [:socket_io, :assign, :pull, :check].each{|fname| self.send("r_rinruby_#{fname}")}
+    @writer.flush
     
-    eval("0", false) # cleanup @reader      
+    eval("0", false) # cleanup @reader
   end
 
 #The quit method will properly close the bridge between Ruby and R, freeing up system resources. This method does not need to be run when a Ruby script ends.
@@ -420,9 +424,12 @@ class RinRuby
       raise "You can only redirect stderr if you are echoing is enabled."
     end
     
-    @writer.print(<<-__TEXT__) if @echo_stderr != next_stderr
-      sink(#{'stdout(),' if next_stderr}type='message')
-    __TEXT__
+    if @echo_stderr != next_stderr then
+      @writer.print(<<-__TEXT__)
+        sink(#{'stdout(),' if next_stderr}type='message')
+      __TEXT__
+      @writer.flush
+    end
     [@echo_enabled = next_enabled, @echo_stderr = next_stderr]
   end
   
@@ -608,6 +615,7 @@ class RinRuby
       EOF
       @writer.puts(
           "on.exit(close(#{RinRuby_Socket}, add = T))") if @opts[:persistent]
+      @writer.flush
       t.join
     end
     keep_socket = @opts[:persistent]
@@ -626,6 +634,7 @@ class RinRuby
           close(#{RinRuby_Socket}); \
           #{RinRuby_Socket} <- NULL
         EOF
+        @writer.flush
         socket.close
       end
     end
@@ -796,6 +805,7 @@ class RinRuby
     
     socket_session{|socket|
       @writer.puts(r_exp)
+      @writer.flush
       socket.write([r_type::ID].pack('l'))
       r_type.send(value, socket)
     }
@@ -808,6 +818,7 @@ class RinRuby
     
     pull_proc = proc{|var, socket|
       @writer.puts "#{RinRuby_Env}$pull(try(#{var}))"
+      @writer.flush
       type = socket.read(4).unpack('l').first
       case type
       when RinRuby_Type_Unknown
@@ -844,6 +855,7 @@ class RinRuby
     assign_engine("#{RinRuby_Env}$assign.test.string", string)
     res = socket_session{|socket|
       @writer.puts "#{RinRuby_Test_Result} <- #{r_func}(#{RinRuby_Test_String})"
+      @writer.flush
       socket.read(4).unpack('l').first > 0
     }
     unless res then
@@ -899,17 +911,16 @@ Unrecoverable parse error: #{end_line}
     
     int_handler_orig = Signal.trap('INT'){
       @writer.print [0x03].pack('C')
-      @reader.gets if @platform !~ /java/
+      @writer.flush
       Signal.trap('INT', nil) # ignore signal
     }
     
     echo_proc ||= proc{
-      need_flush = (@platform !~ /windows/)
       proc{|line|
         line = line[8..-1] if line[0] == 27 # delete escape sequence
         while line.chomp!; end
         puts line
-        $stdout.flush if need_flush
+        $stdout.flush
       }
     }.call
     
