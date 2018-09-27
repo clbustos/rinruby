@@ -162,6 +162,8 @@ class RinRuby
     EOF
     @socket = nil
     [:socket_io, :assign, :pull, :check].each{|fname| self.send("r_rinruby_#{fname}")}
+    
+    eval("0", false) # cleanup @reader      
   end
 
 #The quit method will properly close the bridge between Ruby and R, freeing up system resources. This method does not need to be run when a Ruby script ends.
@@ -240,7 +242,6 @@ class RinRuby
 
   def prompt(regular_prompt="> ", continue_prompt="+ ")
     warn "'interactive' mode is off in this session " unless @interactive
-    return false unless eval("0", false)
     
     @readline ||= begin # initialize @readline at the first invocation
       require 'readline'
