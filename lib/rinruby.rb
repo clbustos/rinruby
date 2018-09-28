@@ -147,12 +147,13 @@ class RinRuby
     cmd = %Q<#{executable} #{@platform_options.join(' ')} --slave>
     if @platform_options.include?('--interactive') then
       require 'pty'
-      @reader, @writer, pid = PTY::spawn("stty -echo && #{cmd}")
-      @engine = @reader
+      @reader, @writer, pid = PTY::spawn("stty -echo && #{cmd}")  
     else
-      @writer = @reader = @engine = IO.popen(cmd, "w+")
+      require 'open3'
+      @writer, @reader, other = *Open3::popen3(cmd)
+      #@writer = @reader = IO::popen(cmd, 'w+')
     end
-    raise "Engine closed" if @engine.closed?
+    raise EngineClosed if (@reader.closed? || @writer.closed?)
     
     # Echo setup; redirect error messages on the Java platform
     (@platform =~ /.*-java/) ? echo(true, true) : echo()
@@ -171,17 +172,12 @@ class RinRuby
   def quit
     begin
       @writer.puts "q(save='no')"
-      @engine.close
-
-
-      @server_socket.close
-      #@reader.close
-      #@writer.close
-      true
-    ensure
-      @engine.close unless @engine.closed?
-      @server_socket.close unless @server_socket.closed?
+      @writer.close
+    rescue
     end
+    @reader.close rescue nil
+    @server_socket.close rescue nil
+    true
   end
 
 #The eval instance method passes the R commands contained in the supplied string and displays any resulting plots or prints the output. For example:
@@ -216,8 +212,6 @@ class RinRuby
 #* echo_override: This argument allows one to set the echo behavior for this call only. The default for echo_override is nil, which does not override the current echo behavior.
 
   def eval(string, echo_override = nil)
-    raise EngineClosed if @engine.closed?
-    
     echo_proc = case echo_override # echo on when echo_proc == nil
     when Proc
       echo_override
@@ -341,7 +335,6 @@ class RinRuby
 #When assigning an array containing differing types of variables, RinRuby will follow R's conversion conventions. An array that contains any Strings will result in a character vector in R. If the array does not contain any Strings, but it does contain a Float or a large integer (in absolute value), then the result will be a numeric vector of Doubles in R. If there are only integers that are sufficiently small (in absolute value), then the result will be a numeric vector of integers in R.
 
   def assign(name, value)
-    raise EngineClosed if @engine.closed?
     if_assignable(name){|fun|
       assign_engine(fun, value)
     }
@@ -401,7 +394,6 @@ class RinRuby
 #      >> puts R.pull("test")
 
   def pull(string, singletons=false)
-    raise EngineClosed if @engine.closed?
     if_parseable(string){|fun|
       pull_engine("#{fun}()", singletons)
     }
@@ -778,6 +770,8 @@ class RinRuby
   end
   
   def assign_engine(fun, value)
+    raise EngineClosed if @writer.closed?
+    
     original_value = value
     
     r_exp = "#{fun}(#{RinRuby_Env}$get_value())"
@@ -810,6 +804,8 @@ class RinRuby
   end
 
   def pull_engine(string, singletons = true)
+    raise EngineClosed if @writer.closed?
+    
     pull_proc = proc{|var, socket|
       @writer.puts "#{RinRuby_Env}$pull(try(#{var}))"
       type = socket.read(4).unpack('l').first
@@ -894,6 +890,8 @@ Unrecoverable parse error: #{end_line}
   public :complete?
   
   def eval_engine(fun, &echo_proc)
+    raise EngineClosed if (@writer.closed? || @reader.closed?)
+    
     @writer.puts "#{fun}()"
     @writer.puts "warning('#{RinRuby_Stderr_Flag}',immediate.=TRUE)" if @echo_stderr
     @writer.puts "print('#{RinRuby_Eval_Flag}')"
