@@ -519,12 +519,12 @@ class RinRuby
       invisible(function(){eval(parsed, env=globalenv())}) # return evaluating function
     }
     #{RinRuby_Env}$assignable <- function(var) {
-      parsed <- try(parse(text=paste0(var, ' <<- v')), silent=TRUE)
+      parsed <- try(parse(text=paste0('substitute(', var, ' <- v)')), silent=TRUE)
       is_invalid <- inherits(parsed, "try-error") || (length(parsed) != 1L)
       #{RinRuby_Env}$session.write(function(write){
         write(ifelse(is_invalid, 0L, 1L))
       })
-      invisible(function(v){eval(parsed)}) # return assigning function
+      invisible(function(v){eval(eval(parsed), envir=globalenv())}) # return assigning function
     }
     EOF
   end
