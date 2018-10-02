@@ -519,12 +519,12 @@ class RinRuby
       invisible(function(){eval(parsed, env=globalenv())}) # return evaluating function
     }
     #{RinRuby_Env}$assignable <- function(var) {
-      parsed <- try(parse(text=paste0('substitute(', var, ' <- v)')), silent=TRUE)
+      parsed <- try(parse(text=paste0(var, ' <- .value')), silent=TRUE)
       is_invalid <- inherits(parsed, "try-error") || (length(parsed) != 1L)
       #{RinRuby_Env}$session.write(function(write){
         write(ifelse(is_invalid, 0L, 1L))
       })
-      invisible(#{RinRuby_Env}$assign(parsed)) # return assigning function
+      invisible(#{RinRuby_Env}$assign(var)) # return assigning function
     }
     EOF
   end
@@ -532,9 +532,9 @@ class RinRuby
   def r_rinruby_assign
     @writer.puts <<-EOF
     #{RinRuby_Env}$assign <- function(var) {
-      parsed <- ifelse(is.expression(var), 
-          var, parse(text=paste0("substitute(", var, " <- v)")))
-      invisible(function(v){eval(eval(parsed), envir=globalenv())})
+      sexpr <- parse(text=paste0(
+          "substitute(", var, " <- .value, list(.value = .value))"))
+      invisible(function(.value){eval(eval(sexpr), envir=globalenv())})
     }
     #{RinRuby_Env}$assign.test.string <-
         #{RinRuby_Env}$assign("#{RinRuby_Test_String}")
