@@ -532,9 +532,11 @@ class RinRuby
   def r_rinruby_assign
     @writer.puts <<-EOF
     #{RinRuby_Env}$assign <- function(var) {
-      sexpr <- parse(text=paste0(
-          "substitute(", var, " <- .value, list(.value = .value))"))
-      invisible(function(.value){eval(eval(sexpr), envir=globalenv())})
+      expr <- parse(text=paste0(var, " <- #{RinRuby_Env}$.value"))
+      invisible(function(.value){
+        #{RinRuby_Env}$.value <- .value
+        eval(expr, envir=globalenv())
+      })
     }
     #{RinRuby_Env}$assign.test.string <-
         #{RinRuby_Env}$assign("#{RinRuby_Test_String}")
