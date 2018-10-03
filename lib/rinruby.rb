@@ -921,7 +921,7 @@ Unrecoverable parse error: #{end_line}
         when /\[1\] \"#{RinRuby_Eval_Flag}\"/
           res = true
           break
-        when /(?:Warning)?: #{RinRuby_Stderr_Flag}/ # "Warning" string may be localized
+        when /(?:Warning)?:\s*#{RinRuby_Stderr_Flag}/ # "Warning" string may be localized
           next
         end
         echo_proc.call(line)
