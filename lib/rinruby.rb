@@ -141,21 +141,34 @@ class RinRuby
     end
     @executable ||= ( @platform =~ /windows/ ) ? find_R_on_windows(@platform =~ /cygwin/) : 'R'
     
-    platform_options = []
-    platform_options << ( ( @platform =~ /windows/ ) ? '--ess' : '--interactive' ) if @interactive
+    @platform_options = []
+    if @interactive then
+      if @executable =~ /Rterm\.exe["']?$/ then
+        @platform_options += ['--ess']
+      elsif @platform !~ /java$/ then
+        # intentionally interactive off under java
+        @platform_options += ['--no-readline', '--interactive']
+      end
+    end
     
-    cmd = %Q<#{executable} #{platform_options.join(' ')} --slave>
-    @writer = @reader = @engine = IO.popen(cmd,"w+")
-    raise "Engine closed" if @engine.closed?
+    cmd = %Q<#{executable} #{@platform_options.join(' ')} --slave>
+    if @platform_options.include?('--interactive') then
+      require 'pty'
+      @reader, @writer, pid = PTY::spawn("stty -echo && #{cmd}")
+    else
+      require 'open3'
+      @writer, @reader, *other = *Open3::popen3(cmd)
+    end
+    raise EngineClosed if (@reader.closed? || @writer.closed?)
     
     @writer.puts <<-EOF
       assign("#{RinRuby_Env}", new.env(), baseenv())
     EOF
     @socket = nil
-    [:socket_io, :get_value, :pull, :check].each{|fname| self.send("r_rinruby_#{fname}")}
+    [:socket_io, :assign, :pull, :check].each{|fname| self.send("r_rinruby_#{fname}")}
+    @writer.flush
     
-    # Echo setup; redirect error messages on the Java platform
-    (@platform =~ /.*-java/) ? echo(true, true) : echo()      
+    eval("0", false) # cleanup @reader
   end
 
 #The quit method will properly close the bridge between Ruby and R, freeing up system resources. This method does not need to be run when a Ruby script ends.
@@ -163,19 +176,13 @@ class RinRuby
   def quit
     begin
       @writer.puts "q(save='no')"
-      @engine.close
-
-
-      @server_socket.close
-      #@reader.close
-      #@writer.close
-      true
-    ensure
-      @engine.close unless @engine.closed?
-      @server_socket.close unless @server_socket.closed?
+      @writer.close
+    rescue
     end
+    @reader.close rescue nil
+    @server_socket.close rescue nil
+    true
   end
-
 
 #The eval instance method passes the R commands contained in the supplied string and displays any resulting plots or prints the output. For example:
 #
@@ -208,47 +215,19 @@ class RinRuby
 #
 #* echo_override: This argument allows one to set the echo behavior for this call only. The default for echo_override is nil, which does not override the current echo behavior.
 
-  def eval(string, echo_override=nil)
-    raise EngineClosed if @engine.closed?
+  def eval(string, echo_override = nil)
+    echo_proc = case echo_override # echo on when echo_proc == nil
+    when Proc
+      echo_override
+    when nil
+      @echo_enabled ? nil : proc{}
+    else
+      echo_override ? nil : proc{}
+    end
     
     if_parseable(string){|fun|
-      @writer.puts "#{fun}()"
-      @writer.puts "warning('#{RinRuby_Stderr_Flag}',immediate.=TRUE)" if @echo_stderr
-      @writer.puts "print('#{RinRuby_Eval_Flag}')"
+      eval_engine(fun, &echo_proc)
     }
-    
-    int_handler_orig = Signal.trap('INT'){
-      @writer.print [0x03].pack('C')
-      @reader.gets if @platform !~ /java/
-      Signal.trap('INT', nil) # ignore signal
-    }
-    
-    echo_proc = proc{}
-    if ((echo_override == nil) ? @echo_enabled : echo_override) then
-      echo_proc = (@platform !~ /windows/) \
-          ? proc{|line| puts line; $stdout.flush} \
-          : proc{|line| puts line}
-    end
-    
-    res = false
-    begin
-      while (line = @reader.gets)
-        # TODO I18N; force_encoding('origin').encode('UTF-8')
-        while line.chomp!; end
-        line = line[8..-1] if line[0] == 27 # delete escape sequence
-        case line
-        when "[1] \"#{RinRuby_Eval_Flag}\""
-          res = true
-          break
-        when /(?:Warning)?: #{RinRuby_Stderr_Flag}/ # "Warning" string may be localized
-          next
-        end
-        echo_proc.call(line)
-      end
-    ensure
-      Signal.trap('INT', int_handler_orig)
-    end
-    res
   end
 
 #When sending code to Ruby using an interactive prompt, this method will change the prompt to an R prompt. From the R prompt commands can be sent to R exactly as if the R program was actually running. When the user is ready to return to Ruby, then the command exit() will return the prompt to Ruby. This is the ideal situation for the explorative programmer who needs to run several lines of code in R, and see the results after each command. This is also an easy way to execute loops without the use of a here document. It should be noted that the prompt command does not work in a script, just Ruby's interactive irb.
@@ -260,8 +239,7 @@ class RinRuby
 #* continue_prompt: This is the string used to denote R's prompt for an incomplete statement (such as a multiple for loop).
 
   def prompt(regular_prompt="> ", continue_prompt="+ ")
-    raise "The 'prompt' method only available in 'interactive' mode" unless @interactive
-    return false unless eval("0", false)
+    warn "'interactive' mode is off in this session " unless @interactive
     
     @readline ||= begin # initialize @readline at the first invocation
       require 'readline'
@@ -270,26 +248,26 @@ class RinRuby
       proc{|prompt|
         print prompt
         $stdout.flush
-        gets.strip
+        gets.strip rescue nil
       }
     end
     
+    cmds = []
     while true
-      cmds = []
-      prompt = regular_prompt
-      begin
-        while true
-          cmds << @readline.call(prompt)
-          break if complete?(cmds.join("\n"))
-          prompt = continue_prompt
+      cmds << @readline.call(cmds.empty? ? regular_prompt : continue_prompt)
+      if cmds[-1] then # the last "nil" input suspend current stack
+        break if /^\s*exit\s*\(\s*\)\s*$/ =~ cmds[0]
+        begin
+          eval_res = false
+          next unless if_complete(cmds){|fun|
+            eval_res = eval_engine(fun)
+          }
+          break unless eval_res
+        rescue ParseError => e
+          puts e.message
         end
-      rescue ParseError => e
-        puts e.message
-        next
       end
-      next if cmds.empty?
-      break if cmds.length == 1 && cmds[0] == "exit()"
-      break unless eval(cmds.join("\n"), true)
+      cmds = []
     end
     true
   end
@@ -361,7 +339,6 @@ class RinRuby
 #When assigning an array containing differing types of variables, RinRuby will follow R's conversion conventions. An array that contains any Strings will result in a character vector in R. If the array does not contain any Strings, but it does contain a Float or a large integer (in absolute value), then the result will be a numeric vector of Doubles in R. If there are only integers that are sufficiently small (in absolute value), then the result will be a numeric vector of integers in R.
 
   def assign(name, value)
-    raise EngineClosed if @engine.closed?
     if_assignable(name){|fun|
       assign_engine(fun, value)
     }
@@ -421,7 +398,6 @@ class RinRuby
 #      >> puts R.pull("test")
 
   def pull(string, singletons=false)
-    raise EngineClosed if @engine.closed?
     if_parseable(string){|fun|
       pull_engine("#{fun}()", singletons)
     }
@@ -448,7 +424,12 @@ class RinRuby
       raise "You can only redirect stderr if you are echoing is enabled."
     end
     
-    eval "sink(#{'stdout(),' if next_stderr}type='message')" if @echo_stderr != next_stderr
+    if @echo_stderr != next_stderr then
+      @writer.print(<<-__TEXT__)
+        sink(#{'stdout(),' if next_stderr}type='message')
+      __TEXT__
+      @writer.flush
+    end
     [@echo_enabled = next_enabled, @echo_stderr = next_stderr]
   end
   
@@ -484,7 +465,7 @@ class RinRuby
   #:startdoc:
 
   def r_rinruby_socket_io
-    @writer.puts <<-EOF
+    @writer.print <<-EOF
       #{RinRuby_Socket} <- NULL
       #{RinRuby_Env}$session <- function(f){
         invisible(f(#{RinRuby_Socket}))
@@ -510,35 +491,53 @@ class RinRuby
   end
   
   def r_rinruby_check
-    @writer.puts <<-EOF
+    @writer.print <<-EOF
     #{RinRuby_Env}$parseable <- function(var) {
-      parsed <- try(parse(text=var), silent=TRUE)
+      src <- srcfilecopy("<text>", lines=var, isFile=F)
+      parsed <- try(parse(text=var, srcfile=src, keep.source=T), silent=TRUE)
+      res <- function(){eval(parsed, env=globalenv())} # return evaluating function
+      notification <- if(inherits(parsed, "try-error")){
+        attributes(res)$parse.data <- getParseData(src)
+        0L
+      }else{
+        1L
+      }
       #{RinRuby_Env}$session.write(function(write){
-        write(ifelse(inherits(parsed, "try-error"), 0L, 1L))
+        write(notification)
       })
-      invisible(function(){eval(parsed, env=globalenv())}) # return evaluating function
+      invisible(res)
+    }
+    #{RinRuby_Env}$last.parse.data <- function(data) {
+      if(nrow(data) == 0L){
+        c(0L, 0L, 0L)
+      }else{
+        endline <- data[max(data$line2) == data$line2, ]
+        last.item <- endline[max(endline$col2) == endline$col2, ]
+        eval(substitute(c(line2, col2, token == "';'"), last.item)) 
+      }
     }
     #{RinRuby_Env}$assignable <- function(var) {
-      parsed <- try(parse(text=paste0(var, ' <<- v')), silent=TRUE)
+      parsed <- try(parse(text=paste0(var, ' <- .value')), silent=TRUE)
       is_invalid <- inherits(parsed, "try-error") || (length(parsed) != 1L)
       #{RinRuby_Env}$session.write(function(write){
         write(ifelse(is_invalid, 0L, 1L))
       })
-      invisible(function(v){eval(parsed)}) # return assigning function
+      invisible(#{RinRuby_Env}$assign(var)) # return assigning function
     }
     EOF
   end
   # Create function on ruby to get values
-  def r_rinruby_get_value
-    @writer.puts <<-EOF
+  def r_rinruby_assign
+    @writer.print <<-EOF
     #{RinRuby_Env}$assign <- function(var) {
-      invisible(if(is.function(var)){
-        var
-      }else{
-        parsed <- parse(text=paste0(var, " <<- v"))
-        function(v){eval(parsed)}
+      expr <- parse(text=paste0(var, " <- #{RinRuby_Env}$.value"))
+      invisible(function(.value){
+        #{RinRuby_Env}$.value <- .value
+        eval(expr, envir=globalenv())
       })
     }
+    #{RinRuby_Env}$assign.test.string <-
+        #{RinRuby_Env}$assign("#{RinRuby_Test_String}")
     #{RinRuby_Env}$get_value <- function() {
       #{RinRuby_Env}$session.read(function(read, readchar){
         value <- NULL
@@ -568,7 +567,7 @@ class RinRuby
   end
 
   def r_rinruby_pull
-    @writer.puts <<-EOF
+    @writer.print <<-EOF
 #{RinRuby_Env}$pull <- function(var){
   #{RinRuby_Env}$session.write(function(write){
     if ( inherits(var ,"try-error") ) {
@@ -610,11 +609,13 @@ class RinRuby
     # TODO check still available connection?
     unless socket then
       t = Thread::new{socket = @server_socket.accept}
-      @writer.puts <<-EOF
-        #{RinRuby_Socket} <- socketConnection(
+      @writer.print <<-EOF
+        #{RinRuby_Socket} <- socketConnection( \
             "#{@hostname}", #{@port_number}, blocking=TRUE, open="rb")
-        #{"on.exit(close(#{RinRuby_Socket}, add = T))" if @opts[:persistent]}
       EOF
+      @writer.puts(
+          "on.exit(close(#{RinRuby_Socket}, add = T))") if @opts[:persistent]
+      @writer.flush
       t.join
     end
     keep_socket = @opts[:persistent]
@@ -629,10 +630,11 @@ class RinRuby
         @socket = socket
       else
         @socket = nil
-        @writer.puts <<-EOF
-          close(#{RinRuby_Socket})
+        @writer.print <<-EOF
+          close(#{RinRuby_Socket}); \
           #{RinRuby_Socket} <- NULL
         EOF
+        @writer.flush
         socket.close
       end
     end
@@ -776,14 +778,15 @@ class RinRuby
     end
   end
   
-  def assign_engine(var, value)
+  def assign_engine(fun, value)
+    raise EngineClosed if @writer.closed?
+    
     original_value = value
     
-    r_assginer = "#{RinRuby_Env}$assign(#{var})"
-    r_exp = "#{r_assginer}(#{RinRuby_Env}$get_value())"
+    r_exp = "#{fun}(#{RinRuby_Env}$get_value())"
     
     if value.kind_of?(::Matrix) # assignment for matrices
-      r_exp = "#{r_assginer}(matrix(#{RinRuby_Env}$get_value(), " \
+      r_exp = "#{fun}(matrix(#{RinRuby_Env}$get_value(), " \
           "nrow=#{value.row_size}, ncol=#{value.column_size}, byrow=T))"
       value = value.row_vectors.collect{|row| row.to_a}.flatten
     elsif !value.kind_of?(Enumerable) then # check each
@@ -802,6 +805,7 @@ class RinRuby
     
     socket_session{|socket|
       @writer.puts(r_exp)
+      @writer.flush
       socket.write([r_type::ID].pack('l'))
       r_type.send(value, socket)
     }
@@ -810,8 +814,11 @@ class RinRuby
   end
 
   def pull_engine(string, singletons = true)
+    raise EngineClosed if @writer.closed?
+    
     pull_proc = proc{|var, socket|
       @writer.puts "#{RinRuby_Env}$pull(try(#{var}))"
+      @writer.flush
       type = socket.read(4).unpack('l').first
       case type
       when RinRuby_Type_Unknown
@@ -844,28 +851,100 @@ class RinRuby
     }
   end
 
-  def if_passed(string, r_func, &then_proc)
-    assign_engine("'#{RinRuby_Test_String}'", string)
+  def if_passed(string, r_func, opt = {}, &then_proc)
+    assign_engine("#{RinRuby_Env}$assign.test.string", string)
     res = socket_session{|socket|
       @writer.puts "#{RinRuby_Test_Result} <- #{r_func}(#{RinRuby_Test_String})"
+      @writer.flush
       socket.read(4).unpack('l').first > 0
     }
-    raise ParseError, "Parse error: #{string}" unless res
+    unless res then
+      if opt[:error_proc] then
+        opt[:error_proc].call(RinRuby_Test_Result)
+        return false
+      else
+        raise ParseError, "Parse error: #{string}"
+      end
+    end
     then_proc ? then_proc.call(RinRuby_Test_Result) : true
   end
-  def if_parseable(string, &then_proc)
-    if_passed(string, "#{RinRuby_Env}$parseable", &then_proc)
+  def if_parseable(string, opt = {}, &then_proc)
+    if_passed(string, "#{RinRuby_Env}$parseable", opt, &then_proc)
   end
-  def if_assignable(name, &then_proc)
-    if_passed(name, "#{RinRuby_Env}$assignable", &then_proc)
+  def if_assignable(name, opt = {}, &then_proc)
+    if_passed(name, "#{RinRuby_Env}$assignable", opt, &then_proc)
+  end
+  
+  def if_complete(lines, &then_proc)
+    if_parseable(lines, {
+      :error_proc => proc{|var|
+        # extract last parsed position
+        l2, c2, is_separator = pull_engine(
+            "#{RinRuby_Env}$last.parse.data(attr(#{var}, 'parse.data'))")
+        
+        # detect unrecoverable error
+        l2_max = lines.size + is_separator
+        while (l2 > 0) and (l2 <= l2_max) # parse completion is before or on the last line
+          end_line = lines[l2 - 1]
+          break if (l2 == l2_max) and (end_line[c2..-1] =~ /^\s*$/)
+          raise ParseError, <<-__TEXT__
+Unrecoverable parse error: #{end_line}
+                           #{' ' * (c2 - 1)}^...
+          __TEXT__
+        end
+      }
+    }, &then_proc)
   end
   
   def complete?(string)
-    if_parseable(string) rescue false
+    if_complete(string.lines)
   end
   public :complete?
+  
+  def eval_engine(fun, &echo_proc)
+    raise EngineClosed if (@writer.closed? || @reader.closed?)
+    
+    @writer.puts "#{fun}()"
+    @writer.puts "warning('#{RinRuby_Stderr_Flag}',immediate.=TRUE)" if @echo_stderr
+    @writer.puts "print('#{RinRuby_Eval_Flag}')"
+    @writer.flush
+    
+    int_handler_orig = Signal.trap('INT'){
+      @writer.print [0x03].pack('C')
+      @writer.flush
+      Signal.trap('INT', nil) # ignore signal
+    }
+    
+    echo_proc ||= proc{
+      proc{|line|
+        line = line[8..-1] if line[0] == 27 # delete escape sequence
+        while line.chomp!; end
+        puts line
+        $stdout.flush
+      }
+    }.call
+    
+    res = false
+    begin
+      while (line = @reader.gets)
+        # TODO I18N; force_encoding('origin').encode('UTF-8')
+        case line
+        when /\[1\] \"#{RinRuby_Eval_Flag}\"/
+          res = true
+          break
+        when /(?:Warning)?:\s*#{RinRuby_Stderr_Flag}/ # "Warning" string may be localized
+          next
+        end
+        echo_proc.call(line)
+      end
+    ensure
+      Signal.trap('INT', int_handler_orig)
+    end
+    res
+  end
 
   def find_R_on_windows(cygwin)
+    return 'R' if cygwin && system('which R > /dev/nul 2>&1')
     path = '?'
     for root in [ 'HKEY_LOCAL_MACHINE', 'HKEY_CURRENT_USER' ]
       if cygwin then
