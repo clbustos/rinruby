@@ -152,7 +152,7 @@ class RinRuby
       assign("#{RinRuby_Env}", new.env(), baseenv())
     EOF
     @socket = nil
-    [:socket_io, :get_value, :pull, :check].each{|fname| self.send("r_rinruby_#{fname}")}
+    [:socket_io, :assign, :pull, :check].each{|fname| self.send("r_rinruby_#{fname}")}
     
     # Echo setup; redirect error messages on the Java platform
     (@platform =~ /.*-java/) ? echo(true, true) : echo()      
@@ -519,26 +519,27 @@ class RinRuby
       invisible(function(){eval(parsed, env=globalenv())}) # return evaluating function
     }
     #{RinRuby_Env}$assignable <- function(var) {
-      parsed <- try(parse(text=paste0(var, ' <<- v')), silent=TRUE)
+      parsed <- try(parse(text=paste0(var, ' <- .value')), silent=TRUE)
       is_invalid <- inherits(parsed, "try-error") || (length(parsed) != 1L)
       #{RinRuby_Env}$session.write(function(write){
         write(ifelse(is_invalid, 0L, 1L))
       })
-      invisible(function(v){eval(parsed)}) # return assigning function
+      invisible(#{RinRuby_Env}$assign(var)) # return assigning function
     }
     EOF
   end
   # Create function on ruby to get values
-  def r_rinruby_get_value
+  def r_rinruby_assign
     @writer.puts <<-EOF
     #{RinRuby_Env}$assign <- function(var) {
-      invisible(if(is.function(var)){
-        var
-      }else{
-        parsed <- parse(text=paste0(var, " <<- v"))
-        function(v){eval(parsed)}
+      expr <- parse(text=paste0(var, " <- #{RinRuby_Env}$.value"))
+      invisible(function(.value){
+        #{RinRuby_Env}$.value <- .value
+        eval(expr, envir=globalenv())
       })
     }
+    #{RinRuby_Env}$assign.test.string <-
+        #{RinRuby_Env}$assign("#{RinRuby_Test_String}")
     #{RinRuby_Env}$get_value <- function() {
       #{RinRuby_Env}$session.read(function(read, readchar){
         value <- NULL
@@ -776,14 +777,13 @@ class RinRuby
     end
   end
   
-  def assign_engine(var, value)
+  def assign_engine(fun, value)
     original_value = value
     
-    r_assginer = "#{RinRuby_Env}$assign(#{var})"
-    r_exp = "#{r_assginer}(#{RinRuby_Env}$get_value())"
+    r_exp = "#{fun}(#{RinRuby_Env}$get_value())"
     
     if value.kind_of?(::Matrix) # assignment for matrices
-      r_exp = "#{r_assginer}(matrix(#{RinRuby_Env}$get_value(), " \
+      r_exp = "#{fun}(matrix(#{RinRuby_Env}$get_value(), " \
           "nrow=#{value.row_size}, ncol=#{value.column_size}, byrow=T))"
       value = value.row_vectors.collect{|row| row.to_a}.flatten
     elsif !value.kind_of?(Enumerable) then # check each
@@ -845,7 +845,7 @@ class RinRuby
   end
 
   def if_passed(string, r_func, &then_proc)
-    assign_engine("'#{RinRuby_Test_String}'", string)
+    assign_engine("#{RinRuby_Env}$assign.test.string", string)
     res = socket_session{|socket|
       @writer.puts "#{RinRuby_Test_Result} <- #{r_func}(#{RinRuby_Test_String})"
       socket.read(4).unpack('l').first > 0
