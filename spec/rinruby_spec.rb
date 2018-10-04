@@ -15,13 +15,11 @@ shared_examples 'RinRubyCore' do
   describe "on init" do
     after{(r.quit rescue nil) if defined?(r)}
     it "should accept parameters as specified on Dahl & Crawford(2009)" do
-      if r.instance_variable_get(:@platform) =~ /.*-java/
-        expect(r.echo_enabled).to be_truthy # For jruby, echo will be overridden as true
-      else
-        expect(r.echo_enabled).to be_falsy
-      end
+      expect(r.echo_enabled).to be_falsy
       expect(r.interactive).to be_falsy
       case r.instance_variable_get(:@platform)
+      when /^windows-cygwin/ then
+        expect(r.executable).to match(/(^R|Rterm\.exe["']?)$/)
       when /^windows/ then
         expect(r.executable).to match(/Rterm\.exe["']?$/)
       else
@@ -60,17 +58,34 @@ shared_examples 'RinRubyCore' do
       it {is_expected.to respond_to(:pull)}
       it {is_expected.to respond_to(:quit)}
       it {is_expected.to respond_to(:echo)}
-      it "return correct values for complete?" do
-        expect(subject.eval("x<-1")).to be_truthy
+      it {is_expected.to respond_to(:prompt)}
+      it "return true for complete? for correct expressions" do
+        ["", "x<-1", "x<-\n1", "'123\n456'", "1+\n2+\n3"].each{|str|
+          expect(subject.complete?(str)).to be true
+        }
       end
       it "return false for complete? for incorrect expressions" do
-        expect(subject.complete?("x<-")).to be_falsy
+        ["x<-", "'123\n", "1+\n2+\n"].each{|str|
+          expect(subject.complete?(str)).to be false
+        }
       end
-      it "correct eval should return true" do 
-        expect(subject.complete?("x<-1")).to be_truthy
+      it "raise error for complete? for unrecoverable expression" do
+        [";", "x<-;"].each{|str|
+          expect{subject.complete?(str)}.to raise_error(RinRuby::ParseError)
+        }
+      end
+      it "correct eval should return true" do
+        ["", "x<-1", "x<-\n1", "'123\n456'"].each{|str|
+          expect(subject.eval(str)).to be_truthy
+        }
       end
       it "incorrect eval should raise an ParseError" do
-        expect{subject.eval("x<-")}.to raise_error(RinRuby::ParseError)
+        [
+          "x<-", "'123\n", # incomplete
+          ";", "x<-;", # unrecoverable
+        ].each{|str|
+          expect{subject.eval(str)}.to raise_error(RinRuby::ParseError)
+        }
       end
     end
     
@@ -302,7 +317,54 @@ shared_examples 'RinRubyCore' do
       it "should raise an ArgumentError error on setter with 0 parameters" do
         expect{subject.unknown_method=() }.to raise_error(ArgumentError)
       end
-    end 
+    end
+  end
+  
+  context "on prompt" do
+    let(:params){
+      super().merge({:interactive => true})
+    }
+    let(:input){@input ||= []}
+    before(:all){
+      begin
+        require 'readline' 
+      rescue LoadError
+      end
+    }
+    before(:each){
+      allow(Readline).to receive(:readline){|prompt, add_hist|
+        print(prompt)
+        input.shift
+      } if defined?(Readline)
+      allow(r).to receive(:gets){input.shift}
+    }
+    it "should exit with exit() input" do
+      ['exit()', ' exit ( ) '].each{|str|
+        input.replace([str])
+        expect{r.prompt}.to output(/^> /).to_stdout
+      }
+    end
+    it "should respond normally with correct inputs" do
+      [
+        [['1'], "> [1] 1"],
+        [['1 +', '2'], "> + [1] 3"],
+        [['1 +', '2 +', '3'], "> + + [1] 6"],
+        [['a <- 1'], "> "],
+        [['a <-', '1'], "> + "],
+      ].each{|src, dst|
+        input.replace(src + ['exit()'])
+        expect{r.prompt}.to output(/^#{Regexp::escape(dst)}/).to_stdout
+      }
+    end
+    it "should print error gently with incorrect inputs" do
+      [
+        ['1 +;'],
+        ['a <-;'],
+      ].each{|src|
+        input.replace(src + ['exit()'])
+        expect{r.prompt}.to output(/Unrecoverable parse error/).to_stdout
+      }
+    end
   end
   
   context "on quit" do
