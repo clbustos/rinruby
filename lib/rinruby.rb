@@ -859,12 +859,9 @@ class RinRuby
       socket.read(4).unpack('l').first > 0
     }
     unless res then
-      if opt[:error_proc] then
-        opt[:error_proc].call(RinRuby_Test_Result)
-        return false
-      else
-        raise ParseError, "Parse error: #{string}"
-      end
+      raise ParseError, "Parse error: #{string}" unless opt[:error_proc]
+      opt[:error_proc].call(RinRuby_Test_Result)
+      return false
     end
     then_proc ? then_proc.call(RinRuby_Test_Result) : true
   end
