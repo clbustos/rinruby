@@ -778,7 +778,7 @@ class RinRuby
     end
   end
   
-  def assign_engine(fun, value)
+  def assign_engine(fun, value, r_type = nil)
     raise EngineClosed if @writer.closed?
     
     original_value = value
@@ -793,7 +793,7 @@ class RinRuby
       value = [value]
     end
     
-    r_type = [
+    r_type ||= [
       R_Logical,
       R_Integer,
       R_Double,
@@ -852,7 +852,7 @@ class RinRuby
   end
 
   def if_passed(string, r_func, opt = {}, &then_proc)
-    assign_engine("#{RinRuby_Env}$assign.test.string", string)
+    assign_engine("#{RinRuby_Env}$assign.test.string", string, R_Character)
     res = socket_session{|socket|
       @writer.puts "#{RinRuby_Test_Result} <- #{r_func}(#{RinRuby_Test_String})"
       @writer.flush
