@@ -942,11 +942,18 @@ Unrecoverable parse error: #{end_line}
     end
     res
   end
-
-  def find_R_on_windows(cygwin)
-    return 'R' if cygwin && system('which R > /dev/nul 2>&1')
-    path = '?'
-    for root in [ 'HKEY_LOCAL_MACHINE', 'HKEY_CURRENT_USER' ]
+  
+  def find_R_on_windows_registry(cygwin)
+    # Remove invalid byte sequence
+    scrub_proc = if RUBY_VERSION >= "2.1.0" then
+      proc{|str| str.scrub}
+    elsif RUBY_VERSION >= "1.9.0" then
+      proc{|str| str.chars.collect{|c| (c.valid_encoding?) ? c : '*'}.join}
+    else
+      proc{|str| str}
+    end
+    
+    ['HKEY_LOCAL_MACHINE', 'HKEY_CURRENT_USER'].each{|root|
       if cygwin then
         [:w, :W].collect{|opt| # [64bit, then 32bit registry]
           [:R64, :R].collect{|mode|
@@ -960,56 +967,42 @@ Unrecoverable parse error: #{end_line}
           }
         }.flatten(2).each{|args|
           v = `regtool get #{args.join(' ')}`.chomp
-          unless v.empty? then
-            path = v
-            break
-          end
+          return v unless v.empty?
         }
       else
-        proc{|str| # Remove invalid byte sequence
-          if RUBY_VERSION >= "2.1.0" then
-            str.scrub
-          elsif RUBY_VERSION >= "1.9.0" then
-            str.chars.collect{|c| (c.valid_encoding?) ? c : '*'}.join
-          else
-            str
-          end
-        }.call(`reg query "#{root}\\Software\\R-core" /v "InstallPath" /s`).each_line do |line|
-          next if line !~ /^\s+InstallPath\s+REG_SZ\s+(.*)/
-          path = $1
-          while path.chomp!
-          end
-          break
-        end
+        scrub_proc.call(`reg query "#{root}\\Software\\R-core" /v "InstallPath" /s`).each_line {|line|
+          return $1.strip if line =~ /^\s+InstallPath\s+REG_SZ\s+(.*)/
+        }
       end
-      break if path != '?'
-    end
-    if path == '?'
-      # search at default install path
-      path = [
-        "Program Files",
-        "Program Files (x86)"
-      ].collect{|prog_dir|
-        Dir::glob(File::join(
-            cygwin ? "/cygdrive/c" : "C:",
-            prog_dir, "R", "*"))
-      }.flatten[0]
-      raise "Cannot locate R executable" unless path
-    end
-    if cygwin
-      path = `cygpath '#{path}'`
-      while path.chomp!
+    }
+    nil
+  end
+
+  def find_R_on_windows(cygwin)
+    return 'R' if cygwin && system('which R > /dev/nul 2>&1')
+    
+    path = find_R_on_windows_registry(cygwin) || ([
+          # search at default install path
+          "Program Files",
+          "Program Files (x86)"
+        ].collect{|prog_dir|
+          Dir::glob(File::join(
+              cygwin ? "/cygdrive/c" : "C:",
+              prog_dir, "R", "*"))
+        }.flatten[0])
+    
+    if path then
+      if cygwin then
+        path = `cygpath '#{path}'`.strip
+        path = [path.gsub(' ','\ '), path]
+      else
+        path = [path.gsub('\\','/')]
       end
-      path = [path.gsub(' ','\ '), path]
-    else
-      path = [path.gsub('\\','/')]
-    end
-    for hierarchy in [ 'bin', 'bin/x64', 'bin/i386']
-      path.each{|item|
-        target = "#{item}/#{hierarchy}/Rterm.exe"
-        if File.exists? target
-          return %Q<"#{target}">
-        end
+      [ 'bin', 'bin/x64', 'bin/i386'].each{|hierarchy| 
+        path.each{|item|
+          target = "#{item}/#{hierarchy}/Rterm.exe"
+          return %Q<"#{target}"> if File.exists? target
+        }
       }
     end
     raise "Cannot locate R executable"
