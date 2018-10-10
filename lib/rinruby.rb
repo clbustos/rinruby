@@ -939,62 +939,66 @@ Unrecoverable parse error: #{end_line}
     res
   end
   
-  def self.find_R_on_windows_registry(cygwin = false)
+  class << self
     # Remove invalid byte sequence
-    scrub_proc = if RUBY_VERSION >= "2.1.0" then
-      proc{|str| str.scrub}
+    if RUBY_VERSION >= "2.1.0" then
+      define_method(:scrub){|str| str.scrub}
     elsif RUBY_VERSION >= "1.9.0" then
-      proc{|str| str.chars.collect{|c| (c.valid_encoding?) ? c : '*'}.join}
+      define_method(:scrub){|str| str.chars.collect{|c| (c.valid_encoding?) ? c : '*'}.join}
     else
-      proc{|str| str}
+      define_method(:scrub){|str| str}
     end
-    
-    ['HKEY_LOCAL_MACHINE', 'HKEY_CURRENT_USER'].each{|root|
-      if cygwin then
-        [:w, :W].collect{|opt| # [64bit, then 32bit registry]
-          [:R64, :R].collect{|mode|
-            `regtool list -#{opt} /#{root}/Software/R-core/#{mode} 2>/dev/null`.lines.collect{|v|
-              v =~ /^\d\.\d\.\d/ ? $& : nil
-            }.compact.sort{|a, b| # latest version has higher priority
-              b <=> a
-            }.collect{|ver|
-              ["-#{opt}", "/#{root}/Software/R-core/#{mode}/#{ver}/InstallPath"]
+  
+    def find_R_dir_on_windows(cygwin = false, &b)
+      res = []
+      b ||= proc{|v| v}
+      
+      # Firstly, check registry
+      ['HKEY_LOCAL_MACHINE', 'HKEY_CURRENT_USER'].each{|root|
+        if cygwin then
+          [:w, :W].collect{|opt| # [64bit, then 32bit registry]
+            [:R64, :R].collect{|mode|
+              `regtool list -#{opt} /#{root}/Software/R-core/#{mode} 2>/dev/null`.lines.collect{|v|
+                v =~ /^\d\.\d\.\d/ ? $& : nil
+              }.compact.sort{|a, b| # latest version has higher priority
+                b <=> a
+              }.collect{|ver|
+                ["-#{opt}", "/#{root}/Software/R-core/#{mode}/#{ver}/InstallPath"]
+              }
             }
+          }.flatten(2).each{|args|
+            v = `cygpath '#{`regtool get #{args.join(' ')}`.strip}'`.strip
+            res << b.call(v) unless v.empty?
           }
-        }.flatten(2).each{|args|
-          v = `cygpath '#{`regtool get #{args.join(' ')}`.strip}'`.strip
-          return v unless v.empty?
-        }
-      else
-        scrub_proc.call(`reg query "#{root}\\Software\\R-core" /v "InstallPath" /s`).each_line {|line|
-          return $1.strip if line =~ /^\s+InstallPath\s+REG_SZ\s+(.*)/
-        }
-      end
-    }
-    nil
-  end
-
-  def self.find_R_on_windows(cygwin = false)
-    return 'R' if cygwin && system('which R > /dev/nul 2>&1')
-    
-    path = find_R_on_windows_registry(cygwin) || ([
-          # search at default install path
-          "Program Files",
-          "Program Files (x86)"
-        ].collect{|prog_dir|
-          Dir::glob(File::join(
-              cygwin ? "/cygdrive/c" : "C:",
-              prog_dir, "R", "*"))
-        }.flatten[0])
-    
-    if path then
-      ['bin', 'bin/x64', 'bin/i386'].product(
-          cygwin ? [path.gsub(' ','\ '), path] : [path.gsub('\\','/')]).each{|bin_dir, base_dir| 
-        target = File::join(base_dir, bin_dir, "Rterm.exe")
-        return %Q<"#{target}"> if File.exists? target
+        else
+          scrub(`reg query "#{root}\\Software\\R-core" /v "InstallPath" /s`).each_line {|line|
+            res << b.call($1.strip) if line =~ /^\s+InstallPath\s+REG_SZ\s+(.*)/
+          }
+        end
       }
+      
+      # Secondly, check default install path
+      ["Program Files", "Program Files (x86)"].each{|prog_dir|
+        Dir::glob(File::join(cygwin ? "/cygdrive/c" : "C:", prog_dir, "R", "*")).each{|path|
+          res << b.call(path)
+        }
+      }
+      
+      res.uniq
     end
-    raise "Cannot locate R executable"
+  
+    def find_R_on_windows(cygwin = false)
+      return 'R' if cygwin && system('which R > /dev/nul 2>&1')
+      
+      find_R_dir_on_windows(cygwin){|path|
+        ['bin', 'bin/x64', 'bin/i386'].product(
+            cygwin ? [path.gsub(' ','\ '), path] : [path.gsub('\\','/')]).each{|bin_dir, base_dir| 
+          r_exe = File::join(base_dir, bin_dir, "Rterm.exe")
+          return %Q<"#{r_exe}"> if File.exists?(r_exe)
+        }
+      }
+      raise "Cannot locate R executable"
+    end
   end
 
 end
