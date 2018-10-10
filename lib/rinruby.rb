@@ -112,24 +112,23 @@ class RinRuby
     if args.size==1 and args[0].is_a? Hash
       @opts.merge!(args[0])
     else
-      [:echo, :interactive, :executable, :port_number, :port_width].each{|k|
-        @opts[k] = args.shift unless args.empty?
+      [:echo, :interactive, :executable, :port_number, :port_width].zip(args).each{|k, v|
+        @opts[k] = ((v == nil) ? @opts[k] : v)
       }
     end
     [:port_width, :executable, :hostname, :interactive, [:echo, :echo_enabled]].each{|k_src, k_dst|
       Kernel.eval("@#{k_dst || k_src} = @opts[:#{k_src}]", binding)
     }
     @echo_stderr = false
-      
-    while true
-      @port_number = @opts[:port_number] + rand(@opts[:port_width])
+
+    raise Errno::EADDRINUSE unless (@port_number = 
+        (@opts[:port_number]...(@opts[:port_number] + @opts[:port_width])).to_a.shuffle.find{|i|
       begin
-        @server_socket = TCPServer::new(@hostname, @port_number)
-        break
+        @server_socket = TCPServer::new(@hostname, i)
       rescue Errno::EADDRINUSE
-        sleep 0.5 if @opts[:port_width] == 1
+        false
       end
-    end
+    })
     
     @platform = case RUBY_PLATFORM
       when /mswin/, /mingw/, /bccwin/ then 'windows'
