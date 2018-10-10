@@ -138,7 +138,7 @@ class RinRuby
         "#{java.lang.System.getProperty('os.name') =~ /[Ww]indows/ ? 'windows' : 'default'}-java"
       else 'default'
     end
-    @executable ||= ( @platform =~ /windows/ ) ? find_R_on_windows(@platform =~ /cygwin/) : 'R'
+    @executable ||= ( @platform =~ /windows/ ) ? self.class.find_R_on_windows(@platform =~ /cygwin/) : 'R'
     
     @platform_options = []
     if @interactive then
@@ -939,7 +939,7 @@ Unrecoverable parse error: #{end_line}
     res
   end
   
-  def find_R_on_windows_registry(cygwin)
+  def self.find_R_on_windows_registry(cygwin = false)
     # Remove invalid byte sequence
     scrub_proc = if RUBY_VERSION >= "2.1.0" then
       proc{|str| str.scrub}
@@ -962,7 +962,7 @@ Unrecoverable parse error: #{end_line}
             }
           }
         }.flatten(2).each{|args|
-          v = `regtool get #{args.join(' ')}`.chomp
+          v = `cygpath '#{`regtool get #{args.join(' ')}`.strip}'`.strip
           return v unless v.empty?
         }
       else
@@ -974,7 +974,7 @@ Unrecoverable parse error: #{end_line}
     nil
   end
 
-  def find_R_on_windows(cygwin)
+  def self.find_R_on_windows(cygwin = false)
     return 'R' if cygwin && system('which R > /dev/nul 2>&1')
     
     path = find_R_on_windows_registry(cygwin) || ([
@@ -988,17 +988,10 @@ Unrecoverable parse error: #{end_line}
         }.flatten[0])
     
     if path then
-      if cygwin then
-        path = `cygpath '#{path}'`.strip
-        path = [path.gsub(' ','\ '), path]
-      else
-        path = [path.gsub('\\','/')]
-      end
-      [ 'bin', 'bin/x64', 'bin/i386'].each{|hierarchy| 
-        path.each{|item|
-          target = "#{item}/#{hierarchy}/Rterm.exe"
-          return %Q<"#{target}"> if File.exists? target
-        }
+      ['bin', 'bin/x64', 'bin/i386'].product(
+          cygwin ? [path.gsub(' ','\ '), path] : [path.gsub('\\','/')]).each{|bin_dir, base_dir| 
+        target = File::join(base_dir, bin_dir, "Rterm.exe")
+        return %Q<"#{target}"> if File.exists? target
       }
     end
     raise "Cannot locate R executable"
