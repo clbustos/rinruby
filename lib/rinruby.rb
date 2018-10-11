@@ -951,7 +951,7 @@ Unrecoverable parse error: #{end_line}
   
     def find_R_dir_on_windows(cygwin = false, &b)
       res = []
-      b ||= proc{|v| v}
+      b ||= proc{}
       
       # Firstly, check registry
       ['HKEY_LOCAL_MACHINE', 'HKEY_CURRENT_USER'].each{|root|
@@ -968,11 +968,12 @@ Unrecoverable parse error: #{end_line}
             }
           }.flatten(2).each{|args|
             v = `cygpath '#{`regtool get #{args.join(' ')}`.strip}'`.strip
-            res << b.call(v) unless v.empty?
+            b.call((res << v)[-1]) unless (v.empty? || res.include?(v))
           }
         else
-          scrub(`reg query "#{root}\\Software\\R-core" /v "InstallPath" /s`).each_line {|line|
-            res << b.call($1.strip) if line =~ /^\s+InstallPath\s+REG_SZ\s+(.*)/
+          scrub(`reg query "#{root}\\Software\\R-core" /v "InstallPath" /s 2>nul`).each_line{|line|
+            next unless line.strip =~ /^\s*InstallPath\s+REG_SZ\s+(.+)/
+            b.call((res << $1)[-1]) unless res.include?($1)
           }
         end
       }
@@ -980,11 +981,11 @@ Unrecoverable parse error: #{end_line}
       # Secondly, check default install path
       ["Program Files", "Program Files (x86)"].each{|prog_dir|
         Dir::glob(File::join(cygwin ? "/cygdrive/c" : "C:", prog_dir, "R", "*")).each{|path|
-          res << b.call(path)
+          b.call((res << path)[-1]) unless res.include?(path)
         }
       }
       
-      res.uniq
+      res
     end
   
     def find_R_on_windows(cygwin = false)
