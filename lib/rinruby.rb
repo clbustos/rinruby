@@ -213,13 +213,14 @@ class RinRuby
 #      EOF
 #
 #* echo_override: This argument allows one to set the echo behavior for this call only. The default for echo_override is nil, which does not override the current echo behavior.
+#* b: echo block, which will be used as echo_override when echo_override equals to nil
 
-  def eval(string, echo_override = nil)
+  def eval(string, echo_override = nil, &b)
     echo_proc = case echo_override # echo on when echo_proc == nil
     when Proc
       echo_override
     when nil
-      @echo_enabled ? nil : proc{}
+      b || (@echo_enabled ? nil : proc{})
     else
       echo_override ? nil : proc{}
     end
@@ -448,7 +449,7 @@ class RinRuby
     :Character,
     :Matrix,
   ].each_with_index{|type, i|
-    eval("RinRuby_Type_#{type} = i")
+    Kernel.eval("RinRuby_Type_#{type} = i", binding)
   }
 
   RinRuby_Socket = "#{RinRuby_Env}$socket"
@@ -911,27 +912,23 @@ Unrecoverable parse error: #{end_line}
       Signal.trap('INT', nil) # ignore signal
     }
     
-    echo_proc ||= proc{
-      proc{|line|
-        line = line[8..-1] if line[0] == 27 # delete escape sequence
-        while line.chomp!; end
-        puts line
-        $stdout.flush
-      }
-    }.call
+    echo_proc ||= proc{|raw, stripped|
+      puts stripped.chomp("")
+      $stdout.flush
+    }
     
     res = false
     begin
       while (line = @reader.gets)
         # TODO I18N; force_encoding('origin').encode('UTF-8')
-        case line
+        case (stripped = line.gsub(/\x1B\[[0-?]*[ -\/]*[@-~]/, '')) # drop escape sequence
         when /\[1\] \"#{RinRuby_Eval_Flag}\"/
           res = true
           break
         when /(?:Warning)?:\s*#{RinRuby_Stderr_Flag}/ # "Warning" string may be localized
           next
         end
-        echo_proc.call(line)
+        echo_proc.call(line, stripped)
       end
     ensure
       Signal.trap('INT', int_handler_orig)
