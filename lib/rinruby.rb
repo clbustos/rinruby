@@ -226,7 +226,7 @@ class RinRuby
     end
     
     if_parseable(string){|fun|
-      eval_engine(fun, &echo_proc)
+      eval_engine("#{fun}()", &echo_proc)
     }
   end
 
@@ -260,7 +260,7 @@ class RinRuby
         begin
           eval_res = false
           next unless if_complete(cmds){|fun|
-            eval_res = eval_engine(fun)
+            eval_res = eval_engine("#{fun}()")
           }
           break unless eval_res
         rescue ParseError => e
@@ -898,10 +898,10 @@ Unrecoverable parse error: #{end_line}
   end
   public :complete?
   
-  def eval_engine(fun, &echo_proc)
+  def eval_engine(r_expr, &echo_proc)
     raise EngineClosed if (@writer.closed? || @reader.closed?)
     
-    @writer.puts "#{fun}()"
+    @writer.puts r_expr
     @writer.puts "warning('#{RinRuby_Stderr_Flag}',immediate.=TRUE)" if @echo_stderr
     @writer.puts "print('#{RinRuby_Eval_Flag}')"
     @writer.flush
