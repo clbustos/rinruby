@@ -112,24 +112,23 @@ class RinRuby
     if args.size==1 and args[0].is_a? Hash
       @opts.merge!(args[0])
     else
-      [:echo, :interactive, :executable, :port_number, :port_width].each{|k|
-        @opts[k] = args.shift unless args.empty?
+      [:echo, :interactive, :executable, :port_number, :port_width].zip(args).each{|k, v|
+        @opts[k] = ((v == nil) ? @opts[k] : v)
       }
     end
     [:port_width, :executable, :hostname, :interactive, [:echo, :echo_enabled]].each{|k_src, k_dst|
       Kernel.eval("@#{k_dst || k_src} = @opts[:#{k_src}]", binding)
     }
     @echo_stderr = false
-      
-    while true
-      @port_number = @opts[:port_number] + rand(@opts[:port_width])
+
+    raise Errno::EADDRINUSE unless (@port_number = 
+        (@opts[:port_number]...(@opts[:port_number] + @opts[:port_width])).to_a.shuffle.find{|i|
       begin
-        @server_socket = TCPServer::new(@hostname, @port_number)
-        break
+        @server_socket = TCPServer::new(@hostname, i)
       rescue Errno::EADDRINUSE
-        sleep 0.5 if @opts[:port_width] == 1
+        false
       end
-    end
+    })
     
     @platform = case RUBY_PLATFORM
       when /mswin/, /mingw/, /bccwin/ then 'windows'
@@ -139,7 +138,7 @@ class RinRuby
         "#{java.lang.System.getProperty('os.name') =~ /[Ww]indows/ ? 'windows' : 'default'}-java"
       else 'default'
     end
-    @executable ||= ( @platform =~ /windows/ ) ? find_R_on_windows(@platform =~ /cygwin/) : 'R'
+    @executable ||= ( @platform =~ /windows/ ) ? self.class.find_R_on_windows(@platform =~ /cygwin/) : 'R'
     
     @platform_options = []
     if @interactive then
@@ -214,19 +213,20 @@ class RinRuby
 #      EOF
 #
 #* echo_override: This argument allows one to set the echo behavior for this call only. The default for echo_override is nil, which does not override the current echo behavior.
+#* b: echo block, which will be used as echo_override when echo_override equals to nil
 
-  def eval(string, echo_override = nil)
+  def eval(string, echo_override = nil, &b)
     echo_proc = case echo_override # echo on when echo_proc == nil
     when Proc
       echo_override
     when nil
-      @echo_enabled ? nil : proc{}
+      b || (@echo_enabled ? nil : proc{})
     else
       echo_override ? nil : proc{}
     end
     
     if_parseable(string){|fun|
-      eval_engine(fun, &echo_proc)
+      eval_engine("#{fun}()", &echo_proc)
     }
   end
 
@@ -260,7 +260,7 @@ class RinRuby
         begin
           eval_res = false
           next unless if_complete(cmds){|fun|
-            eval_res = eval_engine(fun)
+            eval_res = eval_engine("#{fun}()")
           }
           break unless eval_res
         rescue ParseError => e
@@ -449,7 +449,7 @@ class RinRuby
     :Character,
     :Matrix,
   ].each_with_index{|type, i|
-    eval("RinRuby_Type_#{type} = i")
+    Kernel.eval("RinRuby_Type_#{type} = i", binding)
   }
 
   RinRuby_Socket = "#{RinRuby_Env}$socket"
@@ -778,7 +778,7 @@ class RinRuby
     end
   end
   
-  def assign_engine(fun, value)
+  def assign_engine(fun, value, r_type = nil)
     raise EngineClosed if @writer.closed?
     
     original_value = value
@@ -793,7 +793,7 @@ class RinRuby
       value = [value]
     end
     
-    r_type = [
+    r_type ||= [
       R_Logical,
       R_Integer,
       R_Double,
@@ -852,19 +852,16 @@ class RinRuby
   end
 
   def if_passed(string, r_func, opt = {}, &then_proc)
-    assign_engine("#{RinRuby_Env}$assign.test.string", string)
+    assign_engine("#{RinRuby_Env}$assign.test.string", string, R_Character)
     res = socket_session{|socket|
       @writer.puts "#{RinRuby_Test_Result} <- #{r_func}(#{RinRuby_Test_String})"
       @writer.flush
       socket.read(4).unpack('l').first > 0
     }
     unless res then
-      if opt[:error_proc] then
-        opt[:error_proc].call(RinRuby_Test_Result)
-        return false
-      else
-        raise ParseError, "Parse error: #{string}"
-      end
+      raise ParseError, "Parse error: #{string}" unless opt[:error_proc]
+      opt[:error_proc].call(RinRuby_Test_Result)
+      return false
     end
     then_proc ? then_proc.call(RinRuby_Test_Result) : true
   end
@@ -901,10 +898,10 @@ Unrecoverable parse error: #{end_line}
   end
   public :complete?
   
-  def eval_engine(fun, &echo_proc)
+  def eval_engine(r_expr, &echo_proc)
     raise EngineClosed if (@writer.closed? || @reader.closed?)
     
-    @writer.puts "#{fun}()"
+    @writer.puts r_expr
     @writer.puts "warning('#{RinRuby_Stderr_Flag}',immediate.=TRUE)" if @echo_stderr
     @writer.puts "print('#{RinRuby_Eval_Flag}')"
     @writer.flush
@@ -915,104 +912,91 @@ Unrecoverable parse error: #{end_line}
       Signal.trap('INT', nil) # ignore signal
     }
     
-    echo_proc ||= proc{
-      proc{|line|
-        line = line[8..-1] if line[0] == 27 # delete escape sequence
-        while line.chomp!; end
-        puts line
-        $stdout.flush
-      }
-    }.call
+    echo_proc ||= proc{|raw, stripped|
+      puts stripped.chomp("")
+      $stdout.flush
+    }
     
     res = false
     begin
       while (line = @reader.gets)
         # TODO I18N; force_encoding('origin').encode('UTF-8')
-        case line
+        case (stripped = line.gsub(/\x1B\[[0-?]*[ -\/]*[@-~]/, '')) # drop escape sequence
         when /\[1\] \"#{RinRuby_Eval_Flag}\"/
           res = true
           break
         when /(?:Warning)?:\s*#{RinRuby_Stderr_Flag}/ # "Warning" string may be localized
           next
         end
-        echo_proc.call(line)
+        echo_proc.call(line, stripped)
       end
     ensure
       Signal.trap('INT', int_handler_orig)
     end
     res
   end
-
-  def find_R_on_windows(cygwin)
-    return 'R' if cygwin && system('which R > /dev/nul 2>&1')
-    path = '?'
-    for root in [ 'HKEY_LOCAL_MACHINE', 'HKEY_CURRENT_USER' ]
-      if cygwin then
-        [:w, :W].collect{|opt| # [64bit, then 32bit registry]
-          [:R64, :R].collect{|mode|
-            `regtool list -#{opt} /#{root}/Software/R-core/#{mode} 2>/dev/null`.lines.collect{|v|
-              v =~ /^\d\.\d\.\d/ ? $& : nil
-            }.compact.sort{|a, b| # latest version has higher priority
-              b <=> a
-            }.collect{|ver|
-              ["-#{opt}", "/#{root}/Software/R-core/#{mode}/#{ver}/InstallPath"]
-            }
-          }
-        }.flatten(2).each{|args|
-          v = `regtool get #{args.join(' ')}`.chomp
-          unless v.empty? then
-            path = v
-            break
-          end
-        }
-      else
-        proc{|str| # Remove invalid byte sequence
-          if RUBY_VERSION >= "2.1.0" then
-            str.scrub
-          elsif RUBY_VERSION >= "1.9.0" then
-            str.chars.collect{|c| (c.valid_encoding?) ? c : '*'}.join
-          else
-            str
-          end
-        }.call(`reg query "#{root}\\Software\\R-core" /v "InstallPath" /s`).each_line do |line|
-          next if line !~ /^\s+InstallPath\s+REG_SZ\s+(.*)/
-          path = $1
-          while path.chomp!
-          end
-          break
-        end
-      end
-      break if path != '?'
-    end
-    if path == '?'
-      # search at default install path
-      path = [
-        "Program Files",
-        "Program Files (x86)"
-      ].collect{|prog_dir|
-        Dir::glob(File::join(
-            cygwin ? "/cygdrive/c" : "C:",
-            prog_dir, "R", "*"))
-      }.flatten[0]
-      raise "Cannot locate R executable" unless path
-    end
-    if cygwin
-      path = `cygpath '#{path}'`
-      while path.chomp!
-      end
-      path = [path.gsub(' ','\ '), path]
+  
+  class << self
+    # Remove invalid byte sequence
+    if RUBY_VERSION >= "2.1.0" then
+      define_method(:scrub){|str| str.scrub}
+    elsif RUBY_VERSION >= "1.9.0" then
+      define_method(:scrub){|str| str.chars.collect{|c| (c.valid_encoding?) ? c : '*'}.join}
     else
-      path = [path.gsub('\\','/')]
+      define_method(:scrub){|str| str}
     end
-    for hierarchy in [ 'bin', 'bin/x64', 'bin/i386']
-      path.each{|item|
-        target = "#{item}/#{hierarchy}/Rterm.exe"
-        if File.exists? target
-          return %Q<"#{target}">
+  
+    def find_R_dir_on_windows(cygwin = false, &b)
+      res = []
+      b ||= proc{}
+      
+      # Firstly, check registry
+      ['HKEY_LOCAL_MACHINE', 'HKEY_CURRENT_USER'].each{|root|
+        if cygwin then
+          [:w, :W].collect{|opt| # [64bit, then 32bit registry]
+            [:R64, :R].collect{|mode|
+              `regtool list -#{opt} /#{root}/Software/R-core/#{mode} 2>/dev/null`.lines.collect{|v|
+                v =~ /^\d\.\d\.\d/ ? $& : nil
+              }.compact.sort{|a, b| # latest version has higher priority
+                b <=> a
+              }.collect{|ver|
+                ["-#{opt}", "/#{root}/Software/R-core/#{mode}/#{ver}/InstallPath"]
+              }
+            }
+          }.flatten(2).each{|args|
+            v = `cygpath '#{`regtool get #{args.join(' ')}`.strip}'`.strip
+            b.call((res << v)[-1]) unless (v.empty? || res.include?(v))
+          }
+        else
+          scrub(`reg query "#{root}\\Software\\R-core" /v "InstallPath" /s 2>nul`).each_line{|line|
+            next unless line.strip =~ /^\s*InstallPath\s+REG_SZ\s+(.+)/
+            b.call((res << $1)[-1]) unless res.include?($1)
+          }
         end
       }
+      
+      # Secondly, check default install path
+      ["Program Files", "Program Files (x86)"].each{|prog_dir|
+        Dir::glob(File::join(cygwin ? "/cygdrive/c" : "C:", prog_dir, "R", "*")).each{|path|
+          b.call((res << path)[-1]) unless res.include?(path)
+        }
+      }
+      
+      res
     end
-    raise "Cannot locate R executable"
+  
+    def find_R_on_windows(cygwin = false)
+      return 'R' if cygwin && system('which R > /dev/nul 2>&1')
+      
+      find_R_dir_on_windows(cygwin){|path|
+        ['bin', 'bin/x64', 'bin/i386'].product(
+            cygwin ? [path.gsub(' ','\ '), path] : [path.gsub('\\','/')]).each{|bin_dir, base_dir| 
+          r_exe = File::join(base_dir, bin_dir, "Rterm.exe")
+          return %Q<"#{r_exe}"> if File.exists?(r_exe)
+        }
+      }
+      raise "Cannot locate R executable"
+    end
   end
 
 end
