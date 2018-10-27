@@ -1,5 +1,8 @@
 version: 1.0.{build}.{branch}
 
+cache:
+  - vendor/bundle
+
 environment:
   matrix:
     - ruby_version: 25
@@ -13,7 +16,11 @@ environment:
 
 install:
   - set PATH=C:\Ruby%ruby_version%\bin;%PATH%
-  - bundle install
+  - cmd: >-
+      bundle config --local path vendor/bundle
+
+      bundle install
+
   - cmd: >-
       SET r_installer=C:\R-%r_version%-win.exe
 
