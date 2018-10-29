@@ -1,0 +1,68 @@
+version: 1.0.{build}.{branch}
+
+cache:
+  - vendor/bundle
+
+environment:
+  matrix:
+    - jruby_version: 9.2.0.0
+      r_version: 3.5.1
+    - ruby_version: 25
+      r_version: 3.5.1
+    - ruby_version: 25
+      r_version: 3.2.5
+    - ruby_version: 24
+      r_version: 3.5.1
+    - ruby_version: 21
+      r_version: 3.5.1
+
+install:
+  - cmd: >-
+      if not defined jruby_version set JRUBY_PROCESS=rem
+
+      %JRUBY_PROCESS% appveyor DownloadFile https://repo1.maven.org/maven2/org/jruby/jruby-dist/%jruby_version%/jruby-dist-%jruby_version%-bin.zip
+
+      %JRUBY_PROCESS% 7z x jruby-dist-%jruby_version%-bin.zip -y -o"C:\Ruby"
+
+      %JRUBY_PROCESS% set ruby_version="\jruby-%jruby_version%"
+      
+  - set PATH=C:\Ruby%ruby_version%\bin;%PATH%
+  - cmd: >-
+      %JRUBY_PROCESS% gem update --system
+
+      %JRUBY_PROCESS% gem install bundler
+
+      bundle config --local path vendor/bundle
+
+      bundle install
+
+  - cmd: >-
+      SET r_installer=C:\R-%r_version%-win.exe
+
+      echo R installer is %r_installer%
+
+      SET r_archive=https://cran.r-project.org/bin/windows/base
+
+      appveyor DownloadFile %r_archive%/R-%r_version%-win.exe -FileName %r_installer% || appveyor DownloadFile %r_archive%/old/%r_version%/R-%r_version%-win.exe -FileName %r_installer%
+
+      echo Installing %r_installer% ... && %r_installer% /SILENT /DIR="C:\R-%r_version%"
+
+build: off
+
+before_test:
+  - if defined jruby_version ( jruby -v ) else ( ruby -v )
+  - gem -v
+  - bundle -v
+
+test_script:
+  - if defined jruby_version ( bundle exec rspec %CD%\spec ) else ( bundle exec rspec )
+
+after_test:
+  - cmd: >-
+      type nul > %APPVEYOR_REPO_COMMIT%.commit
+
+      7z a coverage.%APPVEYOR_REPO_BRANCH%.zip %APPVEYOR_BUILD_FOLDER%\coverage %APPVEYOR_REPO_COMMIT%.commit
+
+artifacts:
+  - path: coverage.*.zip
+    name: Coverage measured by simplecov
