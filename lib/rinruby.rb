@@ -153,10 +153,11 @@ class RinRuby
     cmd = %Q<#{executable} #{@platform_options.join(' ')} --slave>
     if @platform_options.include?('--interactive') then
       require 'pty'
-      @reader, @writer, pid = PTY::spawn("stty -echo && #{cmd}")
+      @reader, @writer, @r_pid = PTY::spawn("stty -echo && #{cmd}")
     else
       require 'open3'
-      @writer, @reader, *other = *Open3::popen3(cmd)
+      @writer, @reader, stderr, t = *Open3::popen3(cmd)
+      @r_pid = t.pid
     end
     raise EngineClosed if (@reader.closed? || @writer.closed?)
     
@@ -167,6 +168,7 @@ class RinRuby
     [:socket_io, :assign, :pull, :check].each{|fname| self.send("r_rinruby_#{fname}")}
     @writer.flush
     
+    @eval_count = 0
     eval("0", false) # cleanup @reader
   end
 
@@ -901,16 +903,12 @@ Unrecoverable parse error: #{end_line}
   def eval_engine(r_expr, &echo_proc)
     raise EngineClosed if (@writer.closed? || @reader.closed?)
     
-    @writer.puts r_expr
-    @writer.puts "warning('#{RinRuby_Stderr_Flag}',immediate.=TRUE)" if @echo_stderr
-    @writer.puts "print('#{RinRuby_Eval_Flag}')"
+    run_num = (@eval_count += 1)
+    cmd = [r_expr]
+    cmd << "warning('#{RinRuby_Stderr_Flag}',immediate.=T)" if @echo_stderr
+    cmd << "print('#{RinRuby_Eval_Flag}.#{run_num}')"
+    @writer.puts(cmd.join(';'))
     @writer.flush
-    
-    int_handler_orig = Signal.trap('INT'){
-      @writer.print [0x03].pack('C')
-      @writer.flush
-      Signal.trap('INT', nil) # ignore signal
-    }
     
     echo_proc ||= proc{|raw, stripped|
       puts stripped.chomp("")
@@ -918,11 +916,11 @@ Unrecoverable parse error: #{end_line}
     }
     
     res = false
-    begin
+    t = Thread::new{
       while (line = @reader.gets)
         # TODO I18N; force_encoding('origin').encode('UTF-8')
         case (stripped = line.gsub(/\x1B\[[0-?]*[ -\/]*[@-~]/, '')) # drop escape sequence
-        when /\[1\] \"#{RinRuby_Eval_Flag}\"/
+        when /\"#{RinRuby_Eval_Flag}\.#{run_num}\"/
           res = true
           break
         when /(?:Warning)?:\s*#{RinRuby_Stderr_Flag}/ # "Warning" string may be localized
@@ -930,8 +928,26 @@ Unrecoverable parse error: #{end_line}
         end
         echo_proc.call(line, stripped)
       end
+    }
+    
+    int_received = false
+    int_handler_orig = Signal.trap(:INT){
+      Signal.trap(:INT){} # ignore multiple reception 
+      int_received = true
+      if @executable =~ /Rterm\.exe["']?$/
+        @writer.print [0x1B].pack('C') # simulate ESC key
+        @writer.flush
+      else
+        Process.kill(:INT, @r_pid)
+      end
+      t.kill
+    }
+    
+    begin
+      t.join
     ensure
-      Signal.trap('INT', int_handler_orig)
+      Signal.trap(:INT, int_handler_orig)
+      Process.kill(:INT, $$) if int_received
     end
     res
   end
