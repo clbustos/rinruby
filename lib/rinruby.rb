@@ -260,10 +260,10 @@ class RinRuby
       if cmds[-1] then # the last "nil" input suspend current stack
         break if /^\s*exit\s*\(\s*\)\s*$/ =~ cmds[0]
         begin
-          eval_res = false
-          next unless if_complete(cmds){|fun|
-            eval_res = eval_engine("#{fun}()")
+          completed, eval_res = if_complete(cmds){|fun|
+            [true, eval_engine("#{fun}()")]
           }
+          next unless completed
           break unless eval_res
         rescue ParseError => e
           puts e.message
