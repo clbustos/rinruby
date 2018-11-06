@@ -320,6 +320,31 @@ shared_examples 'RinRubyCore' do
     end
   end
   
+  context "on eval in interactive mode" do
+    let(:params){
+      super().merge({:interactive => true})
+    }
+    it "should be interrupted by SIGINT" do
+      int_invoked = false
+      int_handler = Signal::trap(:INT){int_invoked = true}
+      printed = []
+      eval_res = r.eval(<<-__TEXT__){|line|
+        for(i in 1:10){
+          print(i)
+          Sys.sleep(1)
+        }
+      __TEXT__
+        line =~ /^\[1\] *(\S+)/
+        printed << Integer($1)
+        Process::kill(:INT, $$) if (printed[-1] > 2)
+      }
+      Signal::trap(:INT, int_handler)
+      expect(int_invoked).to be_truthy
+      expect(eval_res).to be_falsy
+      expect(printed).not_to include(10)
+    end
+  end
+  
   context "on prompt" do
     let(:params){
       super().merge({:interactive => true})
