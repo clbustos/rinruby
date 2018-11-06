@@ -325,6 +325,10 @@ shared_examples 'RinRubyCore' do
       super().merge({:interactive => true})
     }
     it "should be interrupted by SIGINT" do
+      if r.instance_variable_get(:@platform) =~ /java$/ then
+        pending("JRuby does not give fully support for signal handling")
+        fail
+      end
       int_invoked = false
       int_handler = Signal::trap(:INT){int_invoked = true}
       printed = []
