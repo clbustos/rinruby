@@ -411,7 +411,7 @@ class RinRuby
 #
 #* enable: Setting enable to false will turn all output off until the echo command is used again with enable equal to true. The default is nil, which will return the current setting.
 #
-#* stderr: Setting stderr to true will force messages, warnings, and errors from R to be routed through stdout.  Using stderr redirection is typically not needed for the C implementation of Ruby and is thus not not enabled by default for this implementation.  It is typically necessary for jRuby and is enabled by default in this case.  This redirection works well in practice but it can lead to interleaving output which may confuse RinRuby.  In such cases, stderr redirection should not be used.  Echoing must be enabled when using stderr redirection.
+#* stderr: Setting stderr to true will force messages, warnings, and errors from R to be routed through stdout. Using stderr redirection is typically not needed, and is thus disabled by default. Echoing must be enabled when using stderr redirection.
 
   def echo(enable=nil, stderr=nil)
     next_enabled = (enable == nil) ? @echo_enabled : (enable ? true : false)
