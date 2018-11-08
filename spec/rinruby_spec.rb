@@ -366,6 +366,7 @@ shared_examples 'RinRubyCore' do
         input.shift
       } if defined?(Readline)
       allow(r).to receive(:gets){input.shift}
+      r.echo(true, true)
     }
     it "should exit with exit() input" do
       ['exit()', ' exit ( ) '].each{|str|
@@ -392,6 +393,17 @@ shared_examples 'RinRubyCore' do
       ].each{|src|
         input.replace(src + ['exit()'])
         expect{r.prompt}.to output(/Unrecoverable parse error/).to_stdout
+      }
+    end
+    it "should print R error gently" do
+      if r.instance_variable_get(:@platform) =~ /(?!windows-)java$/ then
+        pending("JRuby maybe fail due to stderr output handling")
+      end
+      [
+        ['stop("something wrong!"); print("skip")', 'print("do other")'],
+      ].each{|src|
+        input.replace(src + ['exit()'])
+        expect{r.prompt}.to output(/something wrong\!.*(?!skip).*do other/m).to_stdout
       }
     end
   end
