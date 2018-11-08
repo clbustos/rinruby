@@ -320,6 +320,35 @@ shared_examples 'RinRubyCore' do
     end
   end
   
+  context "on eval in interactive mode" do
+    let(:params){
+      super().merge({:interactive => true})
+    }
+    it "should be interrupted by SIGINT" do
+      if r.instance_variable_get(:@platform) =~ /java$/ then
+        pending("JRuby does not give fully support for signal handling")
+        fail
+      end
+      int_invoked = false
+      int_handler = Signal::trap(:INT){int_invoked = true}
+      printed = []
+      eval_res = r.eval(<<-__TEXT__){|line|
+        for(i in 1:10){
+          print(i)
+          Sys.sleep(1)
+        }
+      __TEXT__
+        line =~ /^\[1\] *(\S+)/
+        printed << Integer($1)
+        Process::kill(:INT, $$) if (printed[-1] > 2)
+      }
+      Signal::trap(:INT, int_handler)
+      expect(int_invoked).to be_truthy
+      expect(eval_res).to be_falsy
+      expect(printed).not_to include(10)
+    end
+  end
+  
   context "on prompt" do
     let(:params){
       super().merge({:interactive => true})
@@ -337,6 +366,7 @@ shared_examples 'RinRubyCore' do
         input.shift
       } if defined?(Readline)
       allow(r).to receive(:gets){input.shift}
+      r.echo(true, true)
     }
     it "should exit with exit() input" do
       ['exit()', ' exit ( ) '].each{|str|
@@ -363,6 +393,17 @@ shared_examples 'RinRubyCore' do
       ].each{|src|
         input.replace(src + ['exit()'])
         expect{r.prompt}.to output(/Unrecoverable parse error/).to_stdout
+      }
+    end
+    it "should print R error gently" do
+      if r.instance_variable_get(:@platform) =~ /(?!windows-)java$/ then
+        pending("JRuby maybe fail due to stderr output handling")
+      end
+      [
+        ['stop("something wrong!"); print("skip")', 'print("do other")'],
+      ].each{|src|
+        input.replace(src + ['exit()'])
+        expect{r.prompt}.to output(/something wrong\!.*(?!skip).*do other/m).to_stdout
       }
     end
   end
