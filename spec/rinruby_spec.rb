@@ -320,6 +320,28 @@ shared_examples 'RinRubyCore' do
     end
   end
   
+  describe "echo changes eval output" do
+    let(:res){@res ||= {}}
+    before(:each){
+      allow(r).to receive(:puts){|str| res[str.to_sym] = true}
+    }
+    def check_output(*echo_args)
+      r.echo(*echo_args)
+      r.eval("write('out', stdout())")
+      r.eval("write('err', stderr())")
+      [:out, :err].collect{|k| res[k]} 
+    end
+    it "should output both stdout and stderr when echo(true, true)" do
+      expect(check_output(true, true)).to eql([true, true])
+    end
+    it "should output stdout only when echo(true, false)" do
+      expect(check_output(true, false)).to eql([true, nil])
+    end
+    it "should output nothing when echo(false)" do
+      expect(check_output(false)).to eql([nil, nil])
+    end
+  end
+  
   context "on eval in interactive mode" do
     let(:params){
       super().merge({:interactive => true})
