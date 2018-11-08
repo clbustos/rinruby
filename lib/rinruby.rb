@@ -151,13 +151,13 @@ class RinRuby
     end
     
     cmd = %Q<#{executable} #{@platform_options.join(' ')} --slave>
+    cmd = (@platform =~ /^windows(?!-cygwin)/) ? "#{cmd} 2>NUL" : "exec #{cmd} 2>/dev/null"
     if @platform_options.include?('--interactive') then
       require 'pty'
       @reader, @writer, @r_pid = PTY::spawn("stty -echo && #{cmd}")
     else
-      require 'open3'
-      @writer, @reader, stderr, t = *Open3::popen3(cmd)
-      @r_pid = t.pid
+      @writer = @reader = IO::popen(cmd, 'w+')
+      @r_pid = @reader.pid
     end
     raise EngineClosed if (@reader.closed? || @writer.closed?)
     
