@@ -904,10 +904,11 @@ Unrecoverable parse error: #{end_line}
     raise EngineClosed if (@writer.closed? || @reader.closed?)
     
     run_num = (@eval_count += 1)
-    cmd = [r_expr]
-    cmd << "warning('#{RinRuby_Stderr_Flag}',immediate.=T)" if @echo_stderr
-    cmd << "print('#{RinRuby_Eval_Flag}.#{run_num}')"
-    @writer.puts(cmd.join(';'))
+    @writer.print(<<-__TEXT__)
+{#{r_expr}}
+#{"warning('#{RinRuby_Stderr_Flag}',immediate.=T)" if @echo_stderr}
+print('#{RinRuby_Eval_Flag}.#{run_num}')
+    __TEXT__
     @writer.flush
     
     echo_proc ||= proc{|raw, stripped|
@@ -920,8 +921,9 @@ Unrecoverable parse error: #{end_line}
       while (line = @reader.gets)
         # TODO I18N; force_encoding('origin').encode('UTF-8')
         case (stripped = line.gsub(/\x1B\[[0-?]*[ -\/]*[@-~]/, '')) # drop escape sequence
-        when /\"#{RinRuby_Eval_Flag}\.#{run_num}\"/
-          res = true
+        when /\"#{RinRuby_Eval_Flag}\.(\d+)\"/
+          next if $1.to_i != run_num
+          res = true 
           break
         when /(?:Warning)?:\s*#{RinRuby_Stderr_Flag}/ # "Warning" string may be localized
           next
