@@ -459,7 +459,6 @@ class RinRuby
   RinRuby_Test_Result = "#{RinRuby_Env}$test.result"
   
   RinRuby_Eval_Flag = "RINRUBY.EVAL.FLAG"
-  RinRuby_Stderr_Flag = "RINRUBY.STDERR.FLAG"
   
   RinRuby_NA_R_Integer  = -(1 << 31)
   RinRuby_Max_R_Integer =  (1 << 31) - 1
@@ -906,7 +905,6 @@ Unrecoverable parse error: #{end_line}
     run_num = (@eval_count += 1)
     @writer.print(<<-__TEXT__)
 {#{r_expr}}
-#{"warning('#{RinRuby_Stderr_Flag}',immediate.=T)" if @echo_stderr}
 print('#{RinRuby_Eval_Flag}.#{run_num}')
     __TEXT__
     @writer.flush
@@ -925,8 +923,6 @@ print('#{RinRuby_Eval_Flag}.#{run_num}')
           next if $1.to_i != run_num
           res = true 
           break
-        when /(?:Warning)?:\s*#{RinRuby_Stderr_Flag}/ # "Warning" string may be localized
-          next
         end
         echo_proc.call(line, stripped)
       end
