@@ -170,6 +170,11 @@ class RinRuby
     
     @eval_count = 0
     eval("0", false) # cleanup @reader
+    
+    # JRuby on *NIX runs forcefully in non-interactive, where stop() halts R execution immediately in default.
+    # To continue when R error occurs, an error handler is added as a workaround  
+    # @see https://stat.ethz.ch/R-manual/R-devel/library/base/html/stop.html
+    eval("options(error=dump.frames)") if @platform =~ /^(?!windows-).*java$/
   end
 
 #The quit method will properly close the bridge between Ruby and R, freeing up system resources. This method does not need to be run when a Ruby script ends.

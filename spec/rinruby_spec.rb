@@ -418,9 +418,6 @@ shared_examples 'RinRubyCore' do
       }
     end
     it "should print R error gently" do
-      if r.instance_variable_get(:@platform) =~ /(?!windows-)java$/ then
-        pending("JRuby maybe fail due to stderr output handling")
-      end
       [
         ['stop("something wrong!"); print("skip")', 'print("do other")'],
       ].each{|src|
