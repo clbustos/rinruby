@@ -321,24 +321,19 @@ shared_examples 'RinRubyCore' do
   end
   
   describe "echo changes eval output" do
-    let(:res){@res ||= {}}
-    before(:each){
-      allow(r).to receive(:puts){|str| res[str.to_sym] = true}
-    }
-    def check_output(*echo_args)
+    def check_output(echo_args, stdout, stderr)
       r.echo(*echo_args)
-      r.eval("write('out', stdout())")
-      r.eval("write('err', stderr())")
-      [:out, :err].collect{|k| res[k]} 
+      expect{r.eval("write('out', stdout())")}.to output(stdout ? /^out/ : "").to_stdout
+      expect{r.eval("write('err', stderr())")}.to output(stderr ? /^err/ : "").to_stdout
     end
     it "should output both stdout and stderr when echo(true, true)" do
-      expect(check_output(true, true)).to eql([true, true])
+      check_output([true, true], true, true)
     end
     it "should output stdout only when echo(true, false)" do
-      expect(check_output(true, false)).to eql([true, nil])
+      check_output([true, false], true, false)
     end
     it "should output nothing when echo(false)" do
-      expect(check_output(false)).to eql([nil, nil])
+      check_output(false, false, false)
     end
   end
   
