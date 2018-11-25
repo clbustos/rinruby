@@ -320,6 +320,23 @@ shared_examples 'RinRubyCore' do
     end
   end
   
+  describe "echo changes eval output" do
+    def check_output(echo_args, stdout, stderr)
+      r.echo(*echo_args)
+      expect{r.eval("write('out', stdout())")}.to output(stdout ? /^out/ : "").to_stdout
+      expect{r.eval("write('err', stderr())")}.to output(stderr ? /^err/ : "").to_stdout
+    end
+    it "should output both stdout and stderr when echo(true, true)" do
+      check_output([true, true], true, true)
+    end
+    it "should output stdout only when echo(true, false)" do
+      check_output([true, false], true, false)
+    end
+    it "should output nothing when echo(false)" do
+      check_output(false, false, false)
+    end
+  end
+  
   context "on eval in interactive mode" do
     let(:params){
       super().merge({:interactive => true})
@@ -396,9 +413,6 @@ shared_examples 'RinRubyCore' do
       }
     end
     it "should print R error gently" do
-      if r.instance_variable_get(:@platform) =~ /(?!windows-)java$/ then
-        pending("JRuby maybe fail due to stderr output handling")
-      end
       [
         ['stop("something wrong!"); print("skip")', 'print("do other")'],
       ].each{|src|

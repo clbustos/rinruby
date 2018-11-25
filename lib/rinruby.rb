@@ -151,13 +151,13 @@ class RinRuby
     end
     
     cmd = %Q<#{executable} #{@platform_options.join(' ')} --slave>
+    cmd = (@platform =~ /^windows(?!-cygwin)/) ? "#{cmd} 2>NUL" : "exec #{cmd} 2>/dev/null"
     if @platform_options.include?('--interactive') then
       require 'pty'
       @reader, @writer, @r_pid = PTY::spawn("stty -echo && #{cmd}")
     else
-      require 'open3'
-      @writer, @reader, stderr, t = *Open3::popen3(cmd)
-      @r_pid = t.pid
+      @writer = @reader = IO::popen(cmd, 'w+')
+      @r_pid = @reader.pid
     end
     raise EngineClosed if (@reader.closed? || @writer.closed?)
     
@@ -170,6 +170,11 @@ class RinRuby
     
     @eval_count = 0
     eval("0", false) # cleanup @reader
+    
+    # JRuby on *NIX runs forcefully in non-interactive, where stop() halts R execution immediately in default.
+    # To continue when R error occurs, an error handler is added as a workaround  
+    # @see https://stat.ethz.ch/R-manual/R-devel/library/base/html/stop.html
+    eval("options(error=dump.frames)") if @platform =~ /^(?!windows-).*java$/
   end
 
 #The quit method will properly close the bridge between Ruby and R, freeing up system resources. This method does not need to be run when a Ruby script ends.
@@ -411,7 +416,7 @@ class RinRuby
 #
 #* enable: Setting enable to false will turn all output off until the echo command is used again with enable equal to true. The default is nil, which will return the current setting.
 #
-#* stderr: Setting stderr to true will force messages, warnings, and errors from R to be routed through stdout.  Using stderr redirection is typically not needed for the C implementation of Ruby and is thus not not enabled by default for this implementation.  It is typically necessary for jRuby and is enabled by default in this case.  This redirection works well in practice but it can lead to interleaving output which may confuse RinRuby.  In such cases, stderr redirection should not be used.  Echoing must be enabled when using stderr redirection.
+#* stderr: Setting stderr to true will force messages, warnings, and errors from R to be routed through stdout. Using stderr redirection is typically not needed, and is thus disabled by default. Echoing must be enabled when using stderr redirection.
 
   def echo(enable=nil, stderr=nil)
     next_enabled = (enable == nil) ? @echo_enabled : (enable ? true : false)
@@ -459,7 +464,6 @@ class RinRuby
   RinRuby_Test_Result = "#{RinRuby_Env}$test.result"
   
   RinRuby_Eval_Flag = "RINRUBY.EVAL.FLAG"
-  RinRuby_Stderr_Flag = "RINRUBY.STDERR.FLAG"
   
   RinRuby_NA_R_Integer  = -(1 << 31)
   RinRuby_Max_R_Integer =  (1 << 31) - 1
@@ -906,7 +910,6 @@ Unrecoverable parse error: #{end_line}
     run_num = (@eval_count += 1)
     @writer.print(<<-__TEXT__)
 {#{r_expr}}
-#{"warning('#{RinRuby_Stderr_Flag}',immediate.=T)" if @echo_stderr}
 print('#{RinRuby_Eval_Flag}.#{run_num}')
     __TEXT__
     @writer.flush
@@ -925,8 +928,6 @@ print('#{RinRuby_Eval_Flag}.#{run_num}')
           next if $1.to_i != run_num
           res = true 
           break
-        when /(?:Warning)?:\s*#{RinRuby_Stderr_Flag}/ # "Warning" string may be localized
-          next
         end
         echo_proc.call(line, stripped)
       end
